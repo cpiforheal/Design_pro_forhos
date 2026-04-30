@@ -82,6 +82,9 @@ declare namespace Api {
       userName: string
       email: string
       avatar?: string
+      employeeNo?: string
+      dataScope?: 'all' | 'board' | 'self'
+      menuPermissions?: string[]
     }
   }
 

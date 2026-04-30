@@ -39,7 +39,7 @@ import { useSettingStore } from './setting'
 import { useWorktabStore } from './worktab'
 import { AppRouteRecord } from '@/types/router'
 import { setPageTitle } from '@/utils/router'
-import { resetRouterState } from '@/router/guards/beforeEach'
+import { resetRouterState, resetRouteInitState } from '@/router/guards/beforeEach'
 import { useMenuStore } from './menu'
 import { StorageConfig } from '@/utils/storage/storage-config'
 
@@ -73,6 +73,8 @@ export const useUserStore = defineStore(
     const getSettingState = computed(() => useSettingStore().$state)
     // 计算属性：获取工作台状态
     const getWorktabState = computed(() => useWorktabStore().$state)
+    const currentRoles = computed(() => info.value.roles?.length ? info.value.roles : [])
+    const isSuperAdmin = computed(() => currentRoles.value.includes('R_SUPER'))
 
     /**
      * 设置用户信息
@@ -80,6 +82,12 @@ export const useUserStore = defineStore(
      */
     const setUserInfo = (newInfo: Api.Auth.UserInfo) => {
       info.value = newInfo
+    }
+
+    const setAuthSession = (loginResponse: Api.Auth.LoginResponse) => {
+      setToken(loginResponse.token, loginResponse.refreshToken)
+      isLogin.value = true
+      resetRouteInitState()
     }
 
     /**
@@ -215,7 +223,10 @@ export const useUserStore = defineStore(
       getUserInfo,
       getSettingState,
       getWorktabState,
+      currentRoles,
+      isSuperAdmin,
       setUserInfo,
+      setAuthSession,
       setLoginStatus,
       setLanguage,
       setSearchHistory,

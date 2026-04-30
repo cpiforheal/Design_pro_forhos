@@ -1,27 +1,16 @@
 import { AppRouteRecord } from '@/types/router'
-import { dashboardRoutes } from './dashboard'
-import { templateRoutes } from './template'
-import { widgetsRoutes } from './widgets'
-import { examplesRoutes } from './examples'
-import { systemRoutes } from './system'
-import { articleRoutes } from './article'
-import { resultRoutes } from './result'
-import { exceptionRoutes } from './exception'
-import { safeguardRoutes } from './safeguard'
-import { helpRoutes } from './help'
+import { employeeRoutes } from './employee'
+import { assessmentRoutes } from './assessment'
+import { reviewRoutes } from './review'
+import { adminRoutes } from './admin'
 
 /**
- * 导出所有模块化路由
+ * 当前系统仅保留医院每周二考核相关菜单。
+ * art-design-pro 原示例模块（template/widgets/examples/article/result/safeguard/help 等）已从菜单路由移除。
  */
 export const routeModules: AppRouteRecord[] = [
-  dashboardRoutes,
-  templateRoutes,
-  widgetsRoutes,
-  examplesRoutes,
-  systemRoutes,
-  articleRoutes,
-  resultRoutes,
-  exceptionRoutes,
-  safeguardRoutes,
-  ...helpRoutes
+  employeeRoutes,
+  assessmentRoutes,
+  reviewRoutes,
+  adminRoutes
 ]

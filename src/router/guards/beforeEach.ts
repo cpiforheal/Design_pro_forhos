@@ -151,12 +151,19 @@ async function handleRouteGuard(
     NProgress.start()
   }
 
-  // 1. 检查登录状态
+  // 1. 真实账号登录校验：仅 /admin 等静态公开页允许匿名访问。
   if (!handleLoginStatus(to, userStore, next)) {
     return
   }
 
-  // 2. 检查路由初始化是否已失败（防止死循环）
+  // 2. 静态公开路由不触发动态菜单初始化，避免登录页匿名请求用户信息。
+  if (isStaticRoute(to.path)) {
+    setPageTitle(to)
+    next()
+    return
+  }
+
+  // 3. 检查路由初始化是否已失败（防止死循环）
   if (routeInitFailed) {
     // 已经失败过，直接放行到错误页面，不再重试
     if (to.matched.length > 0) {
@@ -168,8 +175,8 @@ async function handleRouteGuard(
     return
   }
 
-  // 3. 处理动态路由注册
-  if (!routeRegistry?.isRegistered() && userStore.isLogin) {
+  // 4. 处理动态路由注册；动态菜单根据真实账号角色过滤。
+  if (!routeRegistry?.isRegistered()) {
     // 防止并发请求（快速连续导航场景）
     if (routeInitInProgress) {
       // 正在初始化中，等待完成后重新导航
@@ -180,12 +187,12 @@ async function handleRouteGuard(
     return
   }
 
-  // 4. 处理根路径重定向
+  // 5. 处理根路径重定向
   if (handleRootPathRedirect(to, next)) {
     return
   }
 
-  // 5. 处理已匹配的路由
+  // 6. 处理已匹配的路由
   if (to.matched.length > 0) {
     setWorktab(to)
     setPageTitle(to)
@@ -193,7 +200,7 @@ async function handleRouteGuard(
     return
   }
 
-  // 6. 未匹配到路由，跳转到 404
+  // 7. 未匹配到路由，跳转到 404
   next({ name: 'Exception404' })
 }
 
@@ -266,7 +273,7 @@ async function handleDynamicRoutes(
   loadingService.showLoading()
 
   try {
-    // 1. 获取用户信息
+    // 1. 获取用户信息；动态菜单必须基于后端返回的账号角色生成。
     await fetchUserInfo()
 
     // 2. 获取菜单数据

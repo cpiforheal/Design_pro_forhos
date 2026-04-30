@@ -41,7 +41,7 @@ export class MenuProcessor {
    */
   private async processFrontendMenu(): Promise<AppRouteRecord[]> {
     const userStore = useUserStore()
-    const roles = userStore.info?.roles
+    const roles = userStore.currentRoles
 
     let menuList = [...asyncRoutes]
 
