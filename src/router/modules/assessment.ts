@@ -8,6 +8,7 @@ export const assessmentRoutes: AppRouteRecord = {
   meta: {
     title: '考核平台',
     icon: 'ri:hospital-line',
+    menuPermission: 'assessment',
     roles: ['R_SUPER', 'R_LEADER', 'R_MANAGER']
   },
   children: [
@@ -19,6 +20,7 @@ export const assessmentRoutes: AppRouteRecord = {
         title: '考核工作台',
         icon: 'ri:dashboard-3-line',
         fixedTab: true,
+        menuPermission: 'assessment',
         roles: ['R_SUPER', 'R_LEADER', 'R_MANAGER']
       }
     },
@@ -29,6 +31,7 @@ export const assessmentRoutes: AppRouteRecord = {
       meta: {
         title: '全员通用',
         icon: 'ri:team-line',
+        menuPermission: 'assessment',
         roles: ['R_SUPER', 'R_MANAGER']
       }
     },
@@ -39,6 +42,7 @@ export const assessmentRoutes: AppRouteRecord = {
       meta: {
         title: '板块考核',
         icon: 'ri:node-tree',
+        menuPermission: 'assessment',
         roles: ['R_SUPER', 'R_MANAGER']
       }
     },
@@ -49,6 +53,7 @@ export const assessmentRoutes: AppRouteRecord = {
       meta: {
         title: '本周任务',
         icon: 'ri:task-line',
+        menuPermission: 'assessment',
         roles: ['R_SUPER', 'R_MANAGER']
       }
     },
@@ -59,6 +64,7 @@ export const assessmentRoutes: AppRouteRecord = {
       meta: {
         title: '整改台账',
         icon: 'ri:alert-line',
+        menuPermission: 'assessment',
         roles: ['R_SUPER', 'R_LEADER', 'R_MANAGER']
       }
     },
@@ -69,6 +75,7 @@ export const assessmentRoutes: AppRouteRecord = {
       meta: {
         title: '汇总看板',
         icon: 'ri:bar-chart-box-line',
+        menuPermission: 'leader-dashboard',
         roles: ['R_SUPER', 'R_LEADER', 'R_MANAGER']
       }
     }

@@ -8,6 +8,7 @@ export const adminRoutes: AppRouteRecord = {
   meta: {
     title: '系统管理',
     icon: 'ri:settings-3-line',
+    menuPermission: 'employee-view',
     roles: ['R_SUPER']
   },
   children: [
@@ -18,6 +19,7 @@ export const adminRoutes: AppRouteRecord = {
       meta: {
         title: '员工管理',
         icon: 'ri:contacts-book-2-line',
+        menuPermission: 'employee-view',
         roles: ['R_SUPER']
       }
     },
@@ -28,6 +30,7 @@ export const adminRoutes: AppRouteRecord = {
       meta: {
         title: '新增用户',
         icon: 'ri:user-add-line',
+        menuPermission: 'employee-add',
         roles: ['R_SUPER']
       }
     },
@@ -38,6 +41,18 @@ export const adminRoutes: AppRouteRecord = {
       meta: {
         title: '权限分配',
         icon: 'ri:shield-user-line',
+        menuPermission: 'permission-assign',
+        roles: ['R_SUPER']
+      }
+    },
+    {
+      path: 'organization',
+      name: 'AssessmentOrganization',
+      component: '/assessment/admin/organization',
+      meta: {
+        title: '组织责任配置',
+        icon: 'ri:organization-chart',
+        menuPermission: 'organization-config',
         roles: ['R_SUPER']
       }
     },
@@ -48,6 +63,7 @@ export const adminRoutes: AppRouteRecord = {
       meta: {
         title: '周期模板',
         icon: 'ri:calendar-check-line',
+        menuPermission: 'cycle-template',
         roles: ['R_SUPER']
       }
     }

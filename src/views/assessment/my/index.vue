@@ -1,16 +1,34 @@
 <template>
-  <div class="employee-assessment-page">
+  <div class="employee-assessment-page" :class="{ 'is-elderly-friendly': isElderlyFriendly }">
     <AssessmentNoticeTicker :messages="noticeMessages" />
+
+    <ElAlert
+      v-if="isElderlyFriendly"
+      class="page-alert"
+      type="success"
+      show-icon
+      :closable="false"
+      title="已启用简化显示：只看待办、状态和提交按钮。"
+    />
+
+    <ElAlert
+      v-if="deadlineAlert"
+      class="page-alert"
+      type="warning"
+      show-icon
+      :closable="false"
+      :title="deadlineAlert"
+    />
 
     <section class="hero-card">
       <div>
-        <el-tag type="success" size="large">{{ currentAssessmentCycle.name }}</el-tag>
+        <ElTag type="success" size="large">{{ currentAssessmentCycle.name }}</ElTag>
         <h1>我的考核</h1>
-        <p
-          >{{ currentEmployee.name }}，{{
+        <p>
+          {{ currentEmployee.name }}，{{
             permissionSummary
-          }}。请按待办逐项确认，提交后等待负责人审核。</p
-        >
+          }}。先处理红色和黄色提醒，完成后提交等待负责人审核。
+        </p>
       </div>
       <div class="hero-score">
         <span>当前得分</span>
@@ -19,176 +37,87 @@
       </div>
     </section>
 
-    <el-row :gutter="16" class="metric-row">
-      <el-col v-for="metric in metrics" :key="metric.label" :xs="12" :md="6">
-        <el-card class="metric-card" shadow="never">
+    <ElRow :gutter="16" class="metric-row">
+      <ElCol v-for="metric in metrics" :key="metric.label" :xs="12" :md="6">
+        <ElCard class="metric-card" shadow="never">
           <span>{{ metric.label }}</span>
           <strong>{{ metric.value }}</strong>
           <small>{{ metric.hint }}</small>
-        </el-card>
-      </el-col>
-    </el-row>
+        </ElCard>
+      </ElCol>
+    </ElRow>
 
-    <el-alert
+    <ElAlert
       v-if="submitResultVisible"
-      class="result-alert"
+      class="page-alert"
       type="success"
       show-icon
       title="提交成功，已进入负责人审核流程"
-      description="后续如被退回，请在“我的整改”中查看退回原因并补充整改。"
+      description="如果被退回，请回到本页补充说明后再次提交。"
       :closable="true"
       @close="submitResultVisible = false"
     />
 
-    <el-row :gutter="16">
-      <el-col :xs="24" :lg="15">
-        <el-card class="panel-card" shadow="never">
-          <template #header>
-            <div class="panel-header">
-              <div>
-                <strong>本周待办</strong>
-                <p>把全员通用、所属板块、本周任务收敛到一个入口。</p>
-              </div>
-              <el-button type="primary" size="large" :loading="loading" @click="confirmSubmit"
-                >提交本周期考核</el-button
-              >
+    <ElCard class="panel-card" shadow="never">
+      <template #header>
+        <div class="panel-header">
+          <div>
+            <strong>我的待办</strong>
+            <p>系统已经把考核项、任务、退回和整改收在一个入口里。</p>
+          </div>
+          <ElButton type="primary" size="large" :loading="loading" @click="confirmSubmit">
+            提交本周期考核
+          </ElButton>
+        </div>
+      </template>
+
+      <ArtTable
+        v-if="todoTableRows.length"
+        :data="todoTableRows"
+        style="width: 100%"
+        size="large"
+        :border="false"
+        :stripe="false"
+        :header-cell-style="{ background: 'transparent' }"
+      >
+        <ElTableColumn label="事项" min-width="280">
+          <template #default="{ row }">
+            <div class="todo-title-cell">
+              <ElTag :type="row.tagType" effect="light" size="small">{{ row.sourceText }}</ElTag>
+              <span>{{ row.title }}</span>
             </div>
           </template>
-
-          <ArtTable
-            v-if="todoTableRows.length"
-            :data="todoTableRows"
-            style="width: 100%"
-            size="large"
-            :border="false"
-            :stripe="false"
-            :header-cell-style="{ background: 'transparent' }"
-          >
-            <ElTableColumn label="事项" min-width="260">
-              <template #default="{ row }">
-                <div class="todo-title-cell">
-                  <ElTag :type="row.tagType" effect="light" size="small">{{ row.source }}</ElTag>
-                  <span>{{ row.title }}</span>
-                </div>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn prop="boardName" label="归属" min-width="150" />
-            <ElTableColumn prop="deadline" label="截止/要求" min-width="170" />
-            <ElTableColumn label="状态" width="100" align="center">
-              <template #default="{ row }">
-                <ElTag :type="row.statusType" size="small">{{ row.statusText }}</ElTag>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn label="操作" width="110" align="center" fixed="right">
-              <template #default="{ row }">
-                <ElButton type="primary" link @click="row.action">{{ row.actionText }}</ElButton>
-              </template>
-            </ElTableColumn>
-          </ArtTable>
-          <el-empty v-else description="当前没有待处理事项" />
-        </el-card>
-      </el-col>
-
-      <el-col :xs="24" :lg="9">
-        <el-card class="panel-card" shadow="never">
-          <template #header>
-            <div class="panel-title-block">
-              <strong>任务处理概览</strong>
-              <p>当前任务待处理 / 已完成</p>
-            </div>
+        </ElTableColumn>
+        <ElTableColumn prop="boardName" label="归属" min-width="150" />
+        <ElTableColumn prop="deadline" label="截止/要求" min-width="170" />
+        <ElTableColumn label="状态" width="120" align="center">
+          <template #default="{ row }">
+            <ElTag :type="row.statusType" size="small">{{ row.statusText }}</ElTag>
           </template>
-          <ArtBarChart
-            height="220px"
-            :data="taskStatusChartData"
-            :x-axis-data="taskStatusXAxis"
-            :show-legend="false"
-            :show-axis-line="false"
-            bar-width="34%"
-          />
-          <div class="task-chart-summary">
-            <span>待处理 {{ taskStatusStats.pending }} 项</span>
-            <span>已完成 {{ taskStatusStats.completed }} 项</span>
-          </div>
-        </el-card>
+        </ElTableColumn>
+        <ElTableColumn label="操作" width="130" align="center" fixed="right">
+          <template #default="{ row }">
+            <ElButton type="primary" link @click="row.action">{{ row.actionText }}</ElButton>
+          </template>
+        </ElTableColumn>
+      </ArtTable>
+      <ElEmpty v-else description="当前没有待处理事项" />
+    </ElCard>
 
-        <el-card class="panel-card" shadow="never">
-          <AssessmentCalendarCard
-            :items="calendarItems"
-            title="我的任务日历"
-            subtitle="点击日期查看当天完成、未完成和上级下发任务"
-            @task-click="goCalendarTask"
-          />
-        </el-card>
-
-        <el-card class="panel-card" shadow="never">
-          <template #header><strong>状态说明</strong></template>
-          <div class="timeline-list">
-            <div class="timeline-item active">
-              <b>待提交</b>
-              <span>员工确认完成情况、备注和整改说明。</span>
-            </div>
-            <div class="timeline-item">
-              <b>待审核</b>
-              <span>提交后由板块负责人审核。</span>
-            </div>
-            <div class="timeline-item">
-              <b>已退回 / 整改中</b>
-              <span>按审核意见补充材料或整改措施。</span>
-            </div>
-            <div class="timeline-item">
-              <b>已通过 / 已销号</b>
-              <span>进入本周期结果和归档。</span>
-            </div>
-          </div>
-        </el-card>
-
-        <el-card class="panel-card" shadow="never">
-          <template #header><strong>我的结果</strong></template>
-          <div class="result-grid">
-            <div
-              ><span>适用项目</span><b>{{ resultStats.totalApplicable }}</b></div
-            >
-            <div
-              ><span>已完成</span><b>{{ resultStats.completedCount }}</b></div
-            >
-            <div
-              ><span>未完成</span><b>{{ resultStats.pendingCount }}</b></div
-            >
-            <div
-              ><span>红线扣分</span><b>{{ summary.redlinePenalty }}</b></div
-            >
-          </div>
-          <el-progress
-            class="result-progress"
-            :percentage="Math.round(resultStats.completionRate * 100)"
-            :stroke-width="12"
-          />
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <el-card class="panel-card" shadow="never">
+    <ElCard v-if="!isElderlyFriendly" class="panel-card" shadow="never">
       <template #header>
         <div class="panel-header">
           <div>
             <strong>考核确认明细</strong>
-            <p>点击“去确认 / 去填写”后在这里直接切换状态，并填写整改措施或备注。</p>
+            <p>未完成时请填写整改措施；提交后进入负责人审核，不能直接反复修改。</p>
           </div>
         </div>
       </template>
       <ElTabs v-model="activeConfirmTab">
         <ElTabPane label="全员通用" name="common">
-          <ArtTable
-            :data="commonAssessmentItems"
-            style="width: 100%"
-            size="large"
-            :border="false"
-            :stripe="false"
-            :header-cell-style="{ background: 'transparent' }"
-            empty-text="暂无全员通用考核项"
-          >
+          <ArtTable :data="commonAssessmentItems" style="width: 100%" size="large" :border="false">
             <ElTableColumn prop="moduleName" label="模块" width="150" />
-            <ElTableColumn label="考核内容" min-width="260">
+            <ElTableColumn label="考核内容" min-width="280">
               <template #default="{ row }">
                 <div class="assessment-title-cell">
                   <strong>{{ row.title }}</strong>
@@ -197,7 +126,7 @@
                 </div>
               </template>
             </ElTableColumn>
-            <ElTableColumn label="状态" width="120" align="center">
+            <ElTableColumn label="状态" width="130" align="center">
               <template #default="{ row }">
                 <ElButton
                   :type="statusType(commonDrafts[row.id]?.status)"
@@ -207,7 +136,7 @@
                 </ElButton>
               </template>
             </ElTableColumn>
-            <ElTableColumn label="整改措施" min-width="220">
+            <ElTableColumn label="整改措施" min-width="240">
               <template #default="{ row }">
                 <ElInput
                   v-model="commonDrafts[row.id].rectification"
@@ -228,17 +157,9 @@
           </ArtTable>
         </ElTabPane>
         <ElTabPane label="板块专项" name="board">
-          <ArtTable
-            :data="currentBoardItems"
-            style="width: 100%"
-            size="large"
-            :border="false"
-            :stripe="false"
-            :header-cell-style="{ background: 'transparent' }"
-            empty-text="暂无板块专项考核项"
-          >
+          <ArtTable :data="currentBoardItems" style="width: 100%" size="large" :border="false">
             <ElTableColumn prop="moduleName" label="模块" width="150" />
-            <ElTableColumn label="考核内容" min-width="260">
+            <ElTableColumn label="考核内容" min-width="280">
               <template #default="{ row }">
                 <div class="assessment-title-cell">
                   <strong>{{ row.title }}</strong>
@@ -247,7 +168,7 @@
                 </div>
               </template>
             </ElTableColumn>
-            <ElTableColumn label="状态" width="120" align="center">
+            <ElTableColumn label="状态" width="130" align="center">
               <template #default="{ row }">
                 <ElButton
                   :type="statusType(boardDrafts[row.id]?.status)"
@@ -257,7 +178,7 @@
                 </ElButton>
               </template>
             </ElTableColumn>
-            <ElTableColumn label="整改措施" min-width="220">
+            <ElTableColumn label="整改措施" min-width="240">
               <template #default="{ row }">
                 <ElInput
                   v-model="boardDrafts[row.id].rectification"
@@ -278,7 +199,7 @@
           </ArtTable>
         </ElTabPane>
       </ElTabs>
-    </el-card>
+    </ElCard>
   </div>
 </template>
 
@@ -287,11 +208,8 @@
   import { useRouter } from 'vue-router'
   import { ElMessageBox } from 'element-plus'
   import { useAssessmentPlatform } from '@/composables/useAssessmentPlatform'
-  import AssessmentCalendarCard, {
-    type AssessmentCalendarItem
-  } from '@/views/assessment/components/AssessmentCalendarCard.vue'
   import AssessmentNoticeTicker from '@/views/assessment/components/AssessmentNoticeTicker.vue'
-  import type { AssessmentStatus } from '@/types/assessment'
+  import type { AssessmentStatus, AssessmentTodoItem, TaskItem } from '@/types/assessment'
 
   const router = useRouter()
   const submitResultVisible = ref(false)
@@ -306,10 +224,11 @@
     currentTasks,
     commonDrafts,
     boardDrafts,
-    hospitalTaskDrafts,
-    boardTaskDrafts,
     rectificationItems,
     myTodoSummary,
+    myPendingItems,
+    myReturnedItems,
+    myRectifyingItems,
     summary,
     submitCurrentCycle,
     toggleAssessment,
@@ -318,129 +237,31 @@
     getStatusLabel
   } = useAssessmentPlatform()
 
-  const taskStatusStats = computed(() =>
-    currentTasks.value.reduce(
-      (stats, task) => {
-        const draft =
-          task.source === '医院安排'
-            ? hospitalTaskDrafts.value[task.id]
-            : boardTaskDrafts.value[task.id]
-        const status = draft?.status ?? 'completed'
-        if (status === 'completed') stats.completed += 1
-        else stats.pending += 1
-        return stats
-      },
-      { pending: 0, completed: 0 }
-    )
+  const isElderlyFriendly = computed(() => Boolean(currentEmployee.value.elderlyFriendly))
+  const overdueTasks = computed(() => currentTasks.value.filter((task) => task.overdueLocked))
+  const nearDeadlineTasks = computed(() =>
+    currentTasks.value.filter((task) => !task.overdueLocked && isNearDeadline(task))
   )
-
-  const taskStatusXAxis = ['待处理', '已完成']
-  const taskStatusChartData = computed(() => [
-    taskStatusStats.value.pending,
-    taskStatusStats.value.completed
-  ])
+  const deadlineAlert = computed(() => {
+    if (overdueTasks.value.length)
+      return `有 ${overdueTasks.value.length} 项任务已逾期，需联系负责人延期后才能提交。`
+    if (myReturnedItems.value.length)
+      return `有 ${myReturnedItems.value.length} 项被退回，请补充后重新提交。`
+    if (nearDeadlineTasks.value.length)
+      return `有 ${nearDeadlineTasks.value.length} 项任务临近截止，请优先处理。`
+    return ''
+  })
 
   const noticeMessages = computed(() => [
-    `全员通用和板块考核统一提交截止：${currentAssessmentCycle.value.submitDeadline}`,
-    `审核截止：${currentAssessmentCycle.value.reviewDeadline}，提交后由负责人确认`,
-    ...currentTasks.value
-      .slice(0, 6)
-      .map((task) => `${task.source}：${task.title}，完成时限 ${task.deadline}`)
+    `提交截止：${currentAssessmentCycle.value.submitDeadline}`,
+    `审核截止：${currentAssessmentCycle.value.reviewDeadline}`,
+    overdueTasks.value.length
+      ? `已逾期 ${overdueTasks.value.length} 项，普通员工不能再提交，需负责人延期`
+      : '没有逾期任务',
+    nearDeadlineTasks.value.length
+      ? `临近截止 ${nearDeadlineTasks.value.length} 项，请先处理`
+      : '待办会在本页集中显示'
   ])
-
-  const calendarItems = computed<AssessmentCalendarItem[]>(() =>
-    currentTasks.value.map((task) => {
-      const draft =
-        task.source === '医院安排'
-          ? hospitalTaskDrafts.value[task.id]
-          : boardTaskDrafts.value[task.id]
-      return {
-        id: task.id,
-        title: task.title,
-        source: task.source,
-        owner: task.owner,
-        deadline: task.deadline,
-        status: draft?.status ?? 'completed'
-      }
-    })
-  )
-
-  const resultStats = computed(() => ({
-    totalApplicable: summary.value.totalApplicable,
-    completedCount: summary.value.completedCount,
-    pendingCount: summary.value.pendingCount,
-    completionRate: summary.value.completionRate
-  }))
-
-  const todoTableRows = computed(() => {
-    const commonTodos = commonAssessmentItems.value.slice(0, 4).map((item) => ({
-      id: `common-${item.id}`,
-      source: '全员通用',
-      tagType: 'success' as const,
-      title: item.title,
-      description: item.standard,
-      boardName: item.moduleName,
-      deadline: currentAssessmentCycle.value.submitDeadline,
-      statusText: getStatusLabel(commonDrafts.value[item.id]?.status ?? 'completed'),
-      statusType: statusType(commonDrafts.value[item.id]?.status),
-      actionText: '去确认',
-      action: () => {
-        activeConfirmTab.value = 'common'
-      }
-    }))
-
-    const boardTodos = currentBoardItems.value.slice(0, 4).map((item) => ({
-      id: `board-${item.id}`,
-      source: '板块考核',
-      tagType: 'warning' as const,
-      title: item.title,
-      description: item.standard,
-      boardName: item.moduleName,
-      deadline: currentAssessmentCycle.value.submitDeadline,
-      statusText: getStatusLabel(boardDrafts.value[item.id]?.status ?? 'completed'),
-      statusType: statusType(boardDrafts.value[item.id]?.status),
-      actionText: '去填写',
-      action: () => {
-        activeConfirmTab.value = 'board'
-      }
-    }))
-
-    const taskTodos = currentTasks.value.slice(0, 4).map((task) => {
-      const draft =
-        task.source === '医院安排'
-          ? hospitalTaskDrafts.value[task.id]
-          : boardTaskDrafts.value[task.id]
-      return {
-        id: `task-${task.id}`,
-        source: '本周任务',
-        tagType: 'primary' as const,
-        title: task.title,
-        boardName: `${task.source} · ${task.owner}`,
-        deadline: task.deadline,
-        statusText: getStatusLabel(draft?.status ?? 'completed'),
-        statusType: statusType(draft?.status),
-        actionText: '处理任务',
-        action: () =>
-          router.push({ path: '/employee-assessment/tasks', query: { taskId: task.id } })
-      }
-    })
-
-    const rectifyTodos = rectificationItems.value.slice(0, 3).map((item) => ({
-      id: `rectification-${item.id}`,
-      source: '整改事项',
-      tagType: 'danger' as const,
-      title: item.description,
-      description: item.rectification,
-      boardName: item.boardName,
-      deadline: '按审核要求尽快完成',
-      statusText: item.status,
-      statusType: item.status === '已销号' ? ('success' as const) : ('danger' as const),
-      actionText: '查看整改',
-      action: () => router.push('/employee-assessment/rectification')
-    }))
-
-    return [...rectifyTodos, ...commonTodos, ...boardTodos, ...taskTodos]
-  })
 
   const metrics = computed(() => [
     {
@@ -464,13 +285,19 @@
     }
   ])
 
-  function goCalendarTask(item: AssessmentCalendarItem) {
-    router.push({ path: '/employee-assessment/tasks', query: { taskId: item.id } })
-  }
+  const todoTableRows = computed(() => [
+    ...myReturnedItems.value.map((item) => toTodoRow(item, 'danger', '去补充')),
+    ...myRectifyingItems.value.map((item) => toTodoRow(item, 'warning', '继续整改')),
+    ...myPendingItems.value
+      .slice(0, isElderlyFriendly.value ? 8 : 14)
+      .map((item) =>
+        toTodoRow(item, item.source === 'task' ? 'primary' : 'success', item.actionText)
+      )
+  ])
 
   async function confirmSubmit() {
     await ElMessageBox.confirm(
-      '提交后将进入负责人审核流程。如被退回，需要按意见补充整改。确认提交本周期考核吗？',
+      '提交后将进入负责人审核；如被退回，需要按意见补充后重新提交。确认提交本周期考核吗？',
       '提交确认',
       { confirmButtonText: '确认提交', cancelButtonText: '再检查一下', type: 'warning' }
     )
@@ -478,10 +305,66 @@
     submitResultVisible.value = true
   }
 
+  function toTodoRow(item: AssessmentTodoItem, tagType: string, actionText: string) {
+    return {
+      ...item,
+      tagType,
+      sourceText: getSourceText(item.source),
+      statusText: getWorkflowText(item.workflowStatus),
+      statusType: getWorkflowTagType(item.workflowStatus),
+      actionText,
+      action: () => goTodo(item)
+    }
+  }
+
+  function goTodo(item: AssessmentTodoItem) {
+    if (item.source === 'task') {
+      router.push({
+        path: '/employee-assessment/tasks',
+        query: { taskId: item.id.replace('my-task-', '') }
+      })
+      return
+    }
+    if (item.source === 'rectification') {
+      router.push('/employee-assessment/rectification')
+      return
+    }
+    activeConfirmTab.value = item.boardId === 'allStaff' ? 'common' : 'board'
+  }
+
+  function getSourceText(source: string) {
+    if (source === 'task') return '任务'
+    if (source === 'rectification') return '整改'
+    return '考核'
+  }
+
+  function getWorkflowText(status: string) {
+    if (status === 'submitted') return '待审核'
+    if (status === 'returned') return '已退回'
+    if (status === 'rectifying') return '整改中'
+    if (status === 'approved' || status === 'closed') return '已完成'
+    return '待提交'
+  }
+
+  function getWorkflowTagType(status: string) {
+    if (status === 'returned') return 'danger'
+    if (status === 'submitted' || status === 'rectifying') return 'warning'
+    if (status === 'approved' || status === 'closed') return 'success'
+    return 'info'
+  }
+
   function statusType(status?: AssessmentStatus) {
     if (status === 'pending') return 'danger' as const
     if (status === 'na') return 'info' as const
     return 'success' as const
+  }
+
+  function isNearDeadline(task: TaskItem) {
+    const value = task.deadlineAt || task.deadline
+    const timestamp = Date.parse(value.includes('T') ? value : value.replace(' ', 'T'))
+    if (Number.isNaN(timestamp)) return false
+    const hours = (timestamp - Date.now()) / 36e5
+    return hours > 0 && hours <= 24
   }
 </script>
 
@@ -490,18 +373,23 @@
     padding: 4px;
   }
 
+  .page-alert,
+  .metric-row,
+  .panel-card {
+    margin-bottom: 16px;
+  }
+
   .hero-card {
     display: flex;
+    gap: 20px;
     align-items: center;
     justify-content: space-between;
-    gap: 20px;
     min-height: 180px;
     padding: 28px;
     margin-bottom: 16px;
     color: #fff;
-    border-radius: 24px;
     background: linear-gradient(135deg, #0f766e, #075985 62%, #1d4ed8);
-    box-shadow: 0 18px 45px rgb(15 118 110 / 22%);
+    border-radius: 18px;
 
     h1 {
       margin: 16px 0 10px;
@@ -511,8 +399,8 @@
     p {
       max-width: 680px;
       margin: 0;
-      color: rgb(255 255 255 / 82%);
       line-height: 1.8;
+      color: rgb(255 255 255 / 84%);
     }
   }
 
@@ -520,13 +408,13 @@
     min-width: 150px;
     padding: 18px;
     text-align: center;
-    border-radius: 20px;
     background: rgb(255 255 255 / 16%);
+    border-radius: 14px;
 
     span,
     small {
       display: block;
-      color: rgb(255 255 255 / 82%);
+      color: rgb(255 255 255 / 84%);
     }
 
     strong {
@@ -536,14 +424,13 @@
     }
   }
 
-  .metric-row {
-    margin-bottom: 16px;
+  .metric-card,
+  .panel-card {
+    border: 0;
+    border-radius: 12px;
   }
 
   .metric-card {
-    border: 0;
-    border-radius: 18px;
-
     span,
     small {
       color: #64748b;
@@ -552,45 +439,27 @@
     strong {
       display: block;
       margin: 8px 0 4px;
-      color: #0f172a;
       font-size: 30px;
+      color: #0f172a;
     }
-  }
-
-  .result-alert {
-    margin-bottom: 16px;
-  }
-
-  .panel-card {
-    margin-bottom: 16px;
-    border: 0;
-    border-radius: 18px;
   }
 
   .panel-header {
     display: flex;
+    gap: 16px;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
 
     p {
       margin: 6px 0 0;
       color: #64748b;
-    }
-  }
-
-  .panel-title-block {
-    p {
-      margin: 6px 0 0;
-      color: #64748b;
-      font-weight: 400;
     }
   }
 
   .todo-title-cell {
     display: flex;
-    align-items: center;
     gap: 10px;
+    align-items: center;
     min-width: 0;
 
     span:last-child {
@@ -599,15 +468,6 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-  }
-
-  .task-chart-summary {
-    display: flex;
-    justify-content: space-around;
-    gap: 12px;
-    margin-top: 10px;
-    color: #64748b;
-    font-size: 13px;
   }
 
   .assessment-title-cell {
@@ -619,74 +479,38 @@
 
     p {
       margin: 6px 0 0;
-      color: #64748b;
       line-height: 1.6;
-    }
-  }
-
-  .timeline-list {
-    display: grid;
-    gap: 12px;
-  }
-
-  .timeline-item {
-    padding: 14px;
-    border-left: 4px solid #cbd5e1;
-    border-radius: 12px;
-    background: #f8fafc;
-
-    &.active {
-      border-left-color: #0f766e;
-      background: #ecfdf5;
-    }
-
-    b,
-    span {
-      display: block;
-    }
-
-    span {
-      margin-top: 4px;
       color: #64748b;
     }
   }
 
-  .result-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+  .is-elderly-friendly {
+    font-size: 17px;
 
-    div {
-      padding: 14px;
-      border-radius: 14px;
-      background: #f8fafc;
+    .hero-card {
+      min-height: 150px;
     }
 
-    span,
-    b {
-      display: block;
+    .hero-card h1 {
+      font-size: 36px;
     }
 
-    span {
-      color: #64748b;
+    :deep(.el-button) {
+      min-height: 42px;
+      font-size: 16px;
     }
 
-    b {
-      margin-top: 6px;
-      color: #0f766e;
-      font-size: 24px;
+    :deep(.el-table__cell) {
+      padding-top: 14px;
+      padding-bottom: 14px;
     }
   }
 
-  .result-progress {
-    margin-top: 16px;
-  }
-
-  @media (max-width: 768px) {
+  @media (width <= 768px) {
     .hero-card,
     .panel-header {
-      align-items: stretch;
       flex-direction: column;
+      align-items: stretch;
     }
 
     .hero-score {

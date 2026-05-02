@@ -72,7 +72,7 @@
   defineEmits<{
     toggle: [itemId: string, scope: 'common' | 'board']
     save: [itemId: string, scope: 'common' | 'board']
-    updateDraft: [
+    'update-draft': [
       itemId: string,
       scope: 'common' | 'board',
       field: 'rectification' | 'remark',
@@ -91,32 +91,38 @@
   .assessment-page {
     padding: 4px;
   }
+
   .intro-card {
     margin-bottom: 16px;
     border-radius: 16px;
   }
+
   .intro-card :deep(.el-card__body) {
     display: flex;
+    gap: 16px;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
   }
+
   .intro-card p {
     margin: 0 0 8px;
     color: #64748b;
   }
+
   .intro-card h2 {
     margin: 0;
     color: #0f172a;
   }
+
   .title-cell strong {
     display: inline-block;
     margin-right: 8px;
     color: #0f172a;
   }
+
   .title-cell p {
     margin: 6px 0 0;
-    color: #64748b;
     line-height: 1.6;
+    color: #64748b;
   }
 </style>

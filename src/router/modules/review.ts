@@ -8,6 +8,7 @@ export const reviewRoutes: AppRouteRecord = {
   meta: {
     title: '审核中心',
     icon: 'ri:file-check-line',
+    menuPermission: 'review-desk',
     roles: ['R_SUPER', 'R_LEADER', 'R_MANAGER']
   },
   children: [
@@ -18,6 +19,7 @@ export const reviewRoutes: AppRouteRecord = {
       meta: {
         title: '审核台',
         icon: 'ri:todo-line',
+        menuPermission: 'review-desk',
         roles: ['R_SUPER', 'R_LEADER', 'R_MANAGER']
       }
     },
@@ -28,6 +30,7 @@ export const reviewRoutes: AppRouteRecord = {
       meta: {
         title: '领导视角',
         icon: 'ri:bar-chart-grouped-line',
+        menuPermission: 'leader-dashboard',
         roles: ['R_SUPER', 'R_LEADER']
       }
     },
@@ -38,6 +41,7 @@ export const reviewRoutes: AppRouteRecord = {
       meta: {
         title: '负责人视角',
         icon: 'ri:group-line',
+        menuPermission: 'review-desk',
         roles: ['R_SUPER', 'R_MANAGER']
       }
     },
@@ -48,6 +52,7 @@ export const reviewRoutes: AppRouteRecord = {
       meta: {
         title: '分管工作安排',
         icon: 'ri:calendar-check-line',
+        menuPermission: 'review-desk',
         roles: ['R_SUPER', 'R_LEADER', 'R_MANAGER']
       }
     }

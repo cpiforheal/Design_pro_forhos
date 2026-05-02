@@ -42,12 +42,13 @@ export class MenuProcessor {
   private async processFrontendMenu(): Promise<AppRouteRecord[]> {
     const userStore = useUserStore()
     const roles = userStore.currentRoles
+    const menuPermissions = userStore.info.menuPermissions ?? []
 
     let menuList = [...asyncRoutes]
 
     // 根据角色过滤菜单
     if (roles && roles.length > 0) {
-      menuList = this.filterMenuByRoles(menuList, roles)
+      menuList = this.filterMenuByAccess(menuList, roles, menuPermissions)
     }
 
     return this.filterEmptyMenus(menuList)
@@ -64,21 +65,42 @@ export class MenuProcessor {
   /**
    * 根据角色过滤菜单
    */
-  private filterMenuByRoles(menu: AppRouteRecord[], roles: string[]): AppRouteRecord[] {
+  private filterMenuByAccess(
+    menu: AppRouteRecord[],
+    roles: string[],
+    menuPermissions: string[]
+  ): AppRouteRecord[] {
     return menu.reduce((acc: AppRouteRecord[], item) => {
-      const itemRoles = item.meta?.roles
-      const hasPermission = !itemRoles || itemRoles.some((role) => roles?.includes(role))
+      const filteredItem = { ...item }
+      if (filteredItem.children?.length) {
+        filteredItem.children = this.filterMenuByAccess(
+          filteredItem.children,
+          roles,
+          menuPermissions
+        )
+      }
 
-      if (hasPermission) {
-        const filteredItem = { ...item }
-        if (filteredItem.children?.length) {
-          filteredItem.children = this.filterMenuByRoles(filteredItem.children, roles)
-        }
+      if (this.hasRouteAccess(item, roles, menuPermissions) || filteredItem.children?.length) {
         acc.push(filteredItem)
       }
 
       return acc
     }, [])
+  }
+
+  private hasRouteAccess(
+    item: AppRouteRecord,
+    roles: string[],
+    menuPermissions: string[]
+  ): boolean {
+    const itemRoles = item.meta?.roles
+    const hasRolePermission = !itemRoles || itemRoles.some((role) => roles.includes(role))
+    if (!hasRolePermission) return false
+
+    const permission = item.meta?.menuPermission
+    if (typeof permission !== 'string' || !permission) return true
+
+    return menuPermissions.includes(permission)
   }
 
   /**

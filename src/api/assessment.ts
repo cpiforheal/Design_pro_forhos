@@ -1,18 +1,24 @@
 ﻿import request from '@/utils/http'
 import type {
   AssessmentBootstrapPayload,
+  AssessmentAssistPayload,
   AssessmentExportPayload,
   AssessmentRecordPayload,
   RectificationClosePayload,
   ReviewActionPayload,
   AssessmentReviewLog,
   ManagerTaskPayload,
+  PerformanceResult,
   TaskItem,
   TaskRecordPayload
 } from '@/types/assessment'
 
 export function fetchAssessmentBootstrap() {
   return request.get<AssessmentBootstrapPayload>({ url: '/api/assessment/bootstrap' })
+}
+
+export function fetchAssessmentAssist(userId: number) {
+  return request.get<AssessmentAssistPayload>({ url: `/api/assessment/assist/${userId}` })
 }
 
 export function saveAssessmentRecord(params: AssessmentRecordPayload) {
@@ -60,6 +66,26 @@ export function exportAssessmentResult() {
 
 export function fetchReviewLogs() {
   return request.get<AssessmentReviewLog[]>({ url: '/api/assessment/review-logs' })
+}
+
+export function fetchPerformanceResults() {
+  return request.get<PerformanceResult[]>({ url: '/api/assessment/performance/results' })
+}
+
+export function confirmPerformance(comment = '员工电子确认') {
+  return request.post<AssessmentBootstrapPayload>({
+    url: '/api/assessment/performance/confirm',
+    params: { comment },
+    showSuccessMessage: true
+  })
+}
+
+export function managerConfirmPerformance(userId: number, comment = '负责人电子确认') {
+  return request.post<AssessmentBootstrapPayload>({
+    url: `/api/assessment/performance/manager-confirm/${userId}`,
+    params: { comment },
+    showSuccessMessage: true
+  })
 }
 
 export function fetchManagedBoardTasks() {

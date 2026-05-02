@@ -8,6 +8,7 @@ export const employeeRoutes: AppRouteRecord = {
   meta: {
     title: '员工端',
     icon: 'ri:user-heart-line',
+    menuPermission: 'assessment',
     roles: ['R_EMPLOYEE']
   },
   children: [
@@ -18,6 +19,7 @@ export const employeeRoutes: AppRouteRecord = {
       meta: {
         title: '我的考核',
         icon: 'ri:home-smile-line',
+        menuPermission: 'assessment',
         fixedTab: true,
         roles: ['R_EMPLOYEE']
       }
@@ -29,6 +31,7 @@ export const employeeRoutes: AppRouteRecord = {
       meta: {
         title: '我的任务',
         icon: 'ri:task-line',
+        menuPermission: 'assessment',
         roles: ['R_EMPLOYEE']
       }
     },
@@ -39,6 +42,7 @@ export const employeeRoutes: AppRouteRecord = {
       meta: {
         title: '我的整改',
         icon: 'ri:alert-line',
+        menuPermission: 'assessment',
         roles: ['R_EMPLOYEE']
       }
     },
@@ -49,6 +53,7 @@ export const employeeRoutes: AppRouteRecord = {
       meta: {
         title: '我的结果',
         icon: 'ri:medal-line',
+        menuPermission: 'assessment',
         roles: ['R_EMPLOYEE']
       }
     }

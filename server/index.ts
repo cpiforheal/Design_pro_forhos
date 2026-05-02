@@ -4,29 +4,38 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import {
   closeRectification,
+  confirmPerformance,
   createAccountUser,
   createManagedBoardTask,
   findUserById,
   findUserByUsername,
   getAssessmentBootstrap,
+  getAssessmentAssist,
   getAssessmentExport,
   getDatabase,
   getReviewLogs,
   getUserPermissions,
+  listBoardResponsibilityConfig,
   listAccountUsers,
   listAssessmentCycles,
   listAssessmentTemplates,
   listManagedBoardTasks,
+  listPerformanceResults,
+  listRoleGrants,
+  managerConfirmPerformance,
   publishManagedBoardTask,
   reviewRecord,
   createAssessmentCycle,
   saveAssessmentRecord,
   saveTaskRecord,
   submitAssessment,
+  updateAccountUserProfile,
   updateAccountUserRole,
   updateAssessmentCycle,
   updateAssessmentCycleStatus,
   updateAssessmentTemplate,
+  updateBoardResponsibilityConfig,
+  updateRoleGrant,
   updateManagedBoardTask
 } from './sqlite'
 
@@ -37,6 +46,12 @@ const jwtSecret = process.env.HOSPITAL_JWT_SECRET || 'hospital-assessment-local-
 interface JwtPayload {
   userId: number
   username: string
+}
+
+function hasBodyKey(body: unknown, key: string): body is Record<string, unknown> {
+  return Boolean(
+    body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, key)
+  )
 }
 
 app.use(cors({ origin: true, credentials: true }))
@@ -172,6 +187,60 @@ app.put('/api/admin/users/:id/role', authMiddleware, requireSuperAdmin, async (r
   }
 })
 
+app.put(
+  '/api/admin/users/:id/profile',
+  authMiddleware,
+  requireSuperAdmin,
+  async (req, res, next) => {
+    try {
+      const userId = Number(req.params.id)
+      if (!userId) {
+        res.status(400).json({ code: 400, msg: '请选择要维护的员工账号', data: null })
+        return
+      }
+      await updateAccountUserProfile(userId, {
+        displayName: hasBodyKey(req.body, 'displayName') ? String(req.body.displayName) : undefined,
+        employeeNo: hasBodyKey(req.body, 'employeeNo') ? String(req.body.employeeNo) : undefined,
+        email: hasBodyKey(req.body, 'email') ? String(req.body.email) : undefined,
+        boardId: hasBodyKey(req.body, 'boardId') ? String(req.body.boardId) : undefined,
+        position: hasBodyKey(req.body, 'position') ? String(req.body.position) : undefined,
+        mobile: hasBodyKey(req.body, 'mobile') ? String(req.body.mobile) : undefined,
+        status:
+          req.body.status === 'disabled'
+            ? 'disabled'
+            : req.body.status === 'active'
+              ? 'active'
+              : undefined,
+        elderlyFriendly:
+          typeof req.body.elderlyFriendly === 'boolean' ? req.body.elderlyFriendly : undefined
+      })
+      res.json({ code: 200, msg: '员工信息已更新', data: null })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
+app.get('/api/admin/roles', authMiddleware, requireSuperAdmin, async (_req, res, next) => {
+  try {
+    res.json({ code: 200, msg: 'ok', data: await listRoleGrants() })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/admin/roles/:id', authMiddleware, requireSuperAdmin, async (req, res, next) => {
+  try {
+    res.json({
+      code: 200,
+      msg: '角色权限已更新',
+      data: await updateRoleGrant(Number(req.params.id), req.body)
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.get(
   '/api/admin/assessment/cycles',
   authMiddleware,
@@ -263,9 +332,55 @@ app.put(
   }
 )
 
+app.get(
+  '/api/admin/organization/boards',
+  authMiddleware,
+  requireSuperAdmin,
+  async (req, res, next) => {
+    try {
+      res.json({
+        code: 200,
+        msg: 'ok',
+        data: await listBoardResponsibilityConfig(req.auth!.userId)
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
+app.put(
+  '/api/admin/organization/boards/:id',
+  authMiddleware,
+  requireSuperAdmin,
+  async (req, res, next) => {
+    try {
+      res.json({
+        code: 200,
+        msg: '组织责任配置已更新',
+        data: await updateBoardResponsibilityConfig(req.auth!.userId, req.params.id, req.body)
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
 app.get('/api/assessment/bootstrap', authMiddleware, async (req, res, next) => {
   try {
     res.json({ code: 200, msg: 'ok', data: await getAssessmentBootstrap(req.auth!.userId) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/assessment/assist/:userId', authMiddleware, async (req, res, next) => {
+  try {
+    res.json({
+      code: 200,
+      msg: 'ok',
+      data: await getAssessmentAssist(req.auth!.userId, Number(req.params.userId))
+    })
   } catch (error) {
     next(error)
   }
@@ -336,6 +451,44 @@ app.get('/api/assessment/review-logs', authMiddleware, async (req, res, next) =>
     next(error)
   }
 })
+
+app.get('/api/assessment/performance/results', authMiddleware, async (req, res, next) => {
+  try {
+    res.json({ code: 200, msg: 'ok', data: await listPerformanceResults(req.auth!.userId) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/assessment/performance/confirm', authMiddleware, async (req, res, next) => {
+  try {
+    const { comment } = req.body as { comment?: string }
+    res.json({
+      code: 200,
+      msg: '绩效结果已确认',
+      data: await confirmPerformance(req.auth!.userId, comment)
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post(
+  '/api/assessment/performance/manager-confirm/:userId',
+  authMiddleware,
+  async (req, res, next) => {
+    try {
+      const { comment } = req.body as { comment?: string }
+      res.json({
+        code: 200,
+        msg: '负责人确认已完成',
+        data: await managerConfirmPerformance(req.auth!.userId, Number(req.params.userId), comment)
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
 
 app.get('/api/assessment/manager/tasks', authMiddleware, async (req, res, next) => {
   try {
@@ -419,6 +572,7 @@ async function requireSuperAdmin(req: Request, res: Response, next: NextFunction
 }
 
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  void _next
   console.error('[Hospital API] 服务异常:', error)
   res.status(500).json({
     code: 500,
@@ -434,10 +588,8 @@ app.listen(port, () => {
   console.log('Default super admin: admin / admin123')
 })
 
-declare global {
-  namespace Express {
-    interface Request {
-      auth?: JwtPayload
-    }
+declare module 'express-serve-static-core' {
+  interface Request {
+    auth?: JwtPayload
   }
 }

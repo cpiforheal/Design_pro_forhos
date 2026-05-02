@@ -2,11 +2,14 @@
 import * as XLSX from 'xlsx'
 import {
   closeAssessmentRectification,
+  confirmPerformance,
   createManagedBoardTask,
   exportAssessmentResult,
   fetchAssessmentBootstrap,
   fetchManagedBoardTasks,
+  fetchPerformanceResults,
   fetchReviewLogs,
+  managerConfirmPerformance,
   publishManagedBoardTask,
   reviewAssessmentRecord,
   saveAssessmentRecord,
@@ -17,9 +20,11 @@ import {
 import {
   fetchAssessmentCycles,
   fetchAssessmentTemplates,
+  fetchBoardResponsibilityConfig,
   updateAssessmentCycle,
   updateAssessmentCycleStatus,
-  updateAssessmentTemplate
+  updateAssessmentTemplate,
+  updateBoardResponsibilityConfig
 } from '@/api/assessment-admin'
 import type {
   AssessmentBootstrapPayload,
@@ -36,7 +41,9 @@ import type {
   AssessmentCycle,
   AssessmentTemplateItem,
   TemplateUpdatePayload,
-  AssessmentReviewLog
+  AssessmentReviewLog,
+  PerformanceResult,
+  BoardResponsibilityConfig
 } from '@/types/assessment'
 import {
   buildEmployeeAssessmentSnapshot,
@@ -54,6 +61,8 @@ const cycleList = ref<AssessmentCycle[]>([])
 const templateList = ref<AssessmentTemplateItem[]>([])
 const reviewLogList = ref<AssessmentReviewLog[]>([])
 const managedBoardTaskList = ref<TaskItem[]>([])
+const performanceResultList = ref<PerformanceResult[]>([])
+const boardResponsibilityList = ref<BoardResponsibilityConfig[]>([])
 let loadPromise: Promise<void> | null = null
 
 const fallbackBoard: Board = {
@@ -137,6 +146,49 @@ export function useAssessmentPlatform() {
   const reviewLogs = computed(() =>
     reviewLogList.value.length ? reviewLogList.value : (bootstrap.value?.reviewLogs ?? [])
   )
+  const performanceResults = computed(() =>
+    performanceResultList.value.length
+      ? performanceResultList.value
+      : (bootstrap.value?.performanceResults ?? [])
+  )
+  const myPerformanceResult = computed(() =>
+    performanceResults.value.find(
+      (item) =>
+        item.userId === (currentEmployee.value as EmployeeProfile & { userId?: number }).userId
+    )
+  )
+  const performanceSummary = computed(
+    () =>
+      bootstrap.value?.performanceSummary ?? {
+        totalEmployees: 0,
+        averageScore: 0,
+        averageCompletionRate: 0,
+        readyToArchiveCount: 0,
+        archivedCount: 0,
+        boardSummaries: []
+      }
+  )
+  const riskSummary = computed(
+    () =>
+      bootstrap.value?.riskSummary ?? {
+        overdueTaskCount: 0,
+        unconfirmedEmployeeCount: 0,
+        openRectificationCount: 0,
+        redlineCount: 0,
+        lowScoreEmployees: []
+      }
+  )
+  const confirmationSummary = computed(
+    () =>
+      bootstrap.value?.confirmationSummary ?? {
+        totalEmployees: 0,
+        employeeConfirmedCount: 0,
+        managerConfirmedCount: 0,
+        readyToArchiveCount: 0,
+        unconfirmedCount: 0
+      }
+  )
+  const confirmationGaps = computed(() => bootstrap.value?.confirmationGaps ?? [])
   const cycleStatusActions = computed(() => bootstrap.value?.cycleStatusActions ?? [])
   const myTodoSummary = computed(
     () =>
@@ -339,6 +391,7 @@ export function useAssessmentPlatform() {
   async function updateTemplate(itemId: string, payload: TemplateUpdatePayload) {
     await updateAssessmentTemplate(itemId, payload)
     templateList.value = await fetchAssessmentTemplates()
+    await loadBootstrap()
   }
 
   async function updateCycle(cycleId: string, payload: Partial<AssessmentCyclePayload>) {
@@ -348,10 +401,37 @@ export function useAssessmentPlatform() {
 
   async function updateCycleStatus(cycleId: string, status: string) {
     cycleList.value = await updateAssessmentCycleStatus(cycleId, status)
+    await loadBootstrap()
   }
 
   async function reloadReviewLogs() {
     reviewLogList.value = await fetchReviewLogs()
+  }
+
+  async function reloadPerformanceResults() {
+    performanceResultList.value = await fetchPerformanceResults()
+  }
+
+  async function confirmMyPerformance() {
+    await saveAndApply(() => confirmPerformance('员工电子确认本周期绩效结果'))
+    performanceResultList.value = bootstrap.value?.performanceResults ?? []
+  }
+
+  async function managerConfirmPerformanceResult(userId: number) {
+    await saveAndApply(() => managerConfirmPerformance(userId, '负责人电子确认本周期绩效结果'))
+    performanceResultList.value = bootstrap.value?.performanceResults ?? []
+  }
+
+  async function reloadBoardResponsibilityConfig() {
+    boardResponsibilityList.value = await fetchBoardResponsibilityConfig()
+  }
+
+  async function updateBoardResponsibility(
+    boardId: string,
+    payload: Partial<BoardResponsibilityConfig>
+  ) {
+    boardResponsibilityList.value = await updateBoardResponsibilityConfig(boardId, payload)
+    await loadBootstrap()
   }
 
   async function reloadManagedBoardTasks() {
@@ -436,10 +516,17 @@ export function useAssessmentPlatform() {
     employeeTodoItems,
     reviewTodoItems,
     reviewLogs,
+    performanceResults,
+    myPerformanceResult,
+    performanceSummary,
+    riskSummary,
+    confirmationSummary,
+    confirmationGaps,
     cycleStatusActions,
     cycleList,
     templateList,
     managedBoardTaskList,
+    boardResponsibilityList,
     myTodoSummary,
     myAssessmentGroups,
     myPendingItems,
@@ -469,6 +556,11 @@ export function useAssessmentPlatform() {
     updateCycle,
     updateCycleStatus,
     reloadReviewLogs,
+    reloadPerformanceResults,
+    confirmMyPerformance,
+    managerConfirmPerformanceResult,
+    reloadBoardResponsibilityConfig,
+    updateBoardResponsibility,
     reloadManagedBoardTasks,
     createManagerTask,
     updateManagerTask,

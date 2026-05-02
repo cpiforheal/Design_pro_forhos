@@ -3,7 +3,9 @@
     <template #header>
       <div>
         <h3 class="m-0 text-lg font-medium">新增用户</h3>
-        <p class="mt-1 mb-0 text-sm text-gray-500">用于超级管理员给新员工开通绩效考核账号，并写入 SQLite 账号表。</p>
+        <p class="mt-1 mb-0 text-sm text-gray-500"
+          >用于超级管理员给新员工开通绩效考核账号，并写入 SQLite 账号表。</p
+        >
       </div>
     </template>
 
@@ -12,7 +14,12 @@
         <ElInput v-model="form.username" placeholder="例如 zhangsan" />
       </ElFormItem>
       <ElFormItem label="初始密码">
-        <ElInput v-model="form.password" type="password" show-password placeholder="请输入初始密码" />
+        <ElInput
+          v-model="form.password"
+          type="password"
+          show-password
+          placeholder="请输入初始密码"
+        />
       </ElFormItem>
       <ElFormItem label="姓名">
         <ElInput v-model="form.displayName" placeholder="请输入员工姓名" />
@@ -28,7 +35,12 @@
       </ElFormItem>
       <ElFormItem label="所属板块">
         <ElSelect v-model="form.boardId" class="w-full">
-          <ElOption v-for="board in nonAllStaffBoards" :key="board.id" :label="board.name" :value="board.id" />
+          <ElOption
+            v-for="board in nonAllStaffBoards"
+            :key="board.id"
+            :label="board.name"
+            :value="board.id"
+          />
         </ElSelect>
       </ElFormItem>
       <ElFormItem label="岗位">
@@ -36,7 +48,11 @@
       </ElFormItem>
       <ElFormItem label="系统权限">
         <ElRadioGroup v-model="form.roleCode">
-          <ElRadioButton v-for="grant in permissionGrants" :key="grant.roleCode" :label="grant.roleCode">
+          <ElRadioButton
+            v-for="grant in enabledRoleGrants"
+            :key="grant.roleCode"
+            :label="grant.roleCode"
+          >
             {{ grant.roleName }}
           </ElRadioButton>
         </ElRadioGroup>
@@ -53,55 +69,62 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { boards, permissionGrants } from '@/data/assessmentData'
-import { createAccountUser } from '@/api/assessment-admin'
-import type { BoardId, SystemRoleCode } from '@/types/assessment'
+  import { reactive, computed, onMounted, ref } from 'vue'
+  import { useRouter } from 'vue-router'
+  import { ElMessage } from 'element-plus'
+  import { boards } from '@/data/assessmentData'
+  import { createAccountUser, fetchRoleGrants } from '@/api/assessment-admin'
+  import type { BoardId, PermissionGrant, SystemRoleCode } from '@/types/assessment'
 
-const router = useRouter()
-const saving = ref(false)
-const nonAllStaffBoards = computed(() => boards.filter((board) => board.id !== 'allStaff'))
+  const router = useRouter()
+  const saving = ref(false)
+  const permissionGrants = ref<PermissionGrant[]>([])
+  const nonAllStaffBoards = computed(() => boards.filter((board) => board.id !== 'allStaff'))
+  const enabledRoleGrants = computed(() =>
+    permissionGrants.value.filter((role) => role.enabled !== false)
+  )
 
-const form = reactive({
-  username: '',
-  password: '',
-  displayName: '',
-  employeeNo: '',
-  email: '',
-  mobile: '',
-  boardId: 'medical' as BoardId,
-  position: '',
-  roleCode: 'R_EMPLOYEE' as SystemRoleCode,
-  elderlyFriendly: true
-})
+  const form = reactive({
+    username: '',
+    password: '',
+    displayName: '',
+    employeeNo: '',
+    email: '',
+    mobile: '',
+    boardId: 'medical' as BoardId,
+    position: '',
+    roleCode: 'R_EMPLOYEE' as SystemRoleCode,
+    elderlyFriendly: true
+  })
 
-async function submit() {
-  if (!form.username || !form.password || !form.displayName || !form.employeeNo || !form.email) {
-    ElMessage.warning('请完整填写账号、密码、姓名、工号和邮箱')
-    return
+  onMounted(async () => {
+    permissionGrants.value = await fetchRoleGrants()
+  })
+
+  async function submit() {
+    if (!form.username || !form.password || !form.displayName || !form.employeeNo || !form.email) {
+      ElMessage.warning('请完整填写账号、密码、姓名、工号和邮箱')
+      return
+    }
+
+    saving.value = true
+    try {
+      await createAccountUser({
+        username: form.username,
+        password: form.password,
+        displayName: form.displayName,
+        employeeNo: form.employeeNo,
+        email: form.email,
+        roleCode: form.roleCode,
+        boardId: form.boardId,
+        position: form.position,
+        mobile: form.mobile,
+        elderlyFriendly: form.elderlyFriendly
+      })
+      ElMessage.success('用户已写入 SQLite，可使用新账号登录')
+      await router.push('/assessment-admin/employees')
+    } finally {
+      saving.value = false
+    }
   }
-
-  saving.value = true
-  try {
-    await createAccountUser({
-      username: form.username,
-      password: form.password,
-      displayName: form.displayName,
-      employeeNo: form.employeeNo,
-      email: form.email,
-      roleCode: form.roleCode,
-      boardId: form.boardId,
-      position: form.position,
-      mobile: form.mobile,
-      elderlyFriendly: form.elderlyFriendly
-    })
-    ElMessage.success('用户已写入 SQLite，可使用新账号登录')
-    await router.push('/assessment-admin/employees')
-  } finally {
-    saving.value = false
-  }
-}
 </script>
-

@@ -18,6 +18,12 @@ export type TodoPriority = 'normal' | 'warning' | 'urgent'
 export type TodoSource = 'assessment' | 'task' | 'rectification' | 'review'
 export type EmployeeStatus = 'active' | 'inactive'
 export type SystemRoleCode = 'R_SUPER' | 'R_LEADER' | 'R_MANAGER' | 'R_EMPLOYEE'
+export type TaskCategory =
+  | '周一重点任务'
+  | '医院重点任务'
+  | '分管负责人任务'
+  | '临时突击任务'
+  | '创新发展任务'
 
 export type RoleId =
   | 'superAdmin'
@@ -54,6 +60,9 @@ export interface Board {
   owner: string
   description: string
   color: string
+  leaderUserId?: number
+  managerUserId?: number
+  officeCoordinatorUserId?: number
 }
 
 export interface EmployeeProfile {
@@ -89,6 +98,9 @@ export interface AssessmentItem {
   title: string
   standard: string
   isRedline?: boolean
+  score?: number
+  deductScore?: number
+  requireEvidence?: boolean
 }
 
 export interface TaskItem {
@@ -97,8 +109,19 @@ export interface TaskItem {
   boardId: BoardId
   title: string
   deadline: string
+  deadlineAt?: string
+  taskCategory?: TaskCategory
+  deployerUserId?: number
+  acceptorUserId?: number
+  acceptanceStatus?: '待验收' | '验收通过' | '退回整改'
+  overdueLocked?: boolean
+  overdue?: boolean
+  collaborationNote?: string
   owner: string
   enabled?: boolean
+  assigneeMode?: 'board' | 'users'
+  assigneeUserIds?: number[]
+  assigneeNames?: string[]
 }
 
 export interface ManagerTaskPayload {
@@ -106,8 +129,16 @@ export interface ManagerTaskPayload {
   boardId: BoardId
   title: string
   deadline: string
+  deadlineAt?: string
+  taskCategory?: TaskCategory
+  deployerUserId?: number
+  acceptorUserId?: number
+  acceptanceStatus?: string
+  collaborationNote?: string
   owner: string
   enabled?: boolean
+  assigneeMode?: 'board' | 'users'
+  assigneeUserIds?: number[]
 }
 
 export interface EvidenceAttachment {
@@ -197,13 +228,25 @@ export interface EmployeeAssessmentSnapshot {
 }
 
 export interface PermissionGrant {
-  id: string
-  roleCode: SystemRoleCode
+  id: string | number
+  roleCode: string
   roleName: string
   description: string
   menuPermissions: string[]
   actionPermissions: string[]
   dataScope: 'all' | 'board' | 'self'
+  enabled?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface RoleGrantUpdatePayload {
+  roleName?: string
+  description?: string
+  menuPermissions?: string[]
+  actionPermissions?: string[]
+  dataScope?: 'all' | 'board' | 'self'
+  enabled?: boolean
 }
 
 export interface AssessmentAdminConfig {
@@ -312,6 +355,98 @@ export interface AssessmentReviewLog {
   operatedAt: string
 }
 
+export interface PerformanceResult {
+  id: number
+  cycleId: string
+  userId: number
+  employeeName: string
+  employeeNo: string
+  boardId: BoardId
+  boardName: string
+  completionRate: number
+  dailyScore: number
+  redlinePenalty: number
+  finalScore: number
+  unfinishedCount: number
+  rectificationCount: number
+  overdueCount: number
+  archivedStatus: 'draft' | 'ready' | 'archived'
+  employeeConfirmedAt: string
+  managerConfirmedAt: string
+  managerUserId?: number
+  managerName?: string
+  updatedAt: string
+}
+
+export interface PerformanceConfirmation {
+  id: number
+  cycleId: string
+  userId: number
+  role: 'employee' | 'manager'
+  confirmerUserId: number
+  comment: string
+  confirmedAt: string
+}
+
+export interface PerformanceSummary {
+  totalEmployees: number
+  averageScore: number
+  averageCompletionRate: number
+  readyToArchiveCount: number
+  archivedCount: number
+  boardSummaries: Array<{
+    boardId: BoardId
+    boardName: string
+    completionRate: number
+    averageScore: number
+    overdueTaskCount: number
+  }>
+}
+
+export interface RiskSummary {
+  overdueTaskCount: number
+  unconfirmedEmployeeCount: number
+  openRectificationCount: number
+  redlineCount: number
+  lowScoreEmployees: PerformanceResult[]
+}
+
+export interface ConfirmationSummary {
+  totalEmployees: number
+  employeeConfirmedCount: number
+  managerConfirmedCount: number
+  readyToArchiveCount: number
+  unconfirmedCount: number
+}
+
+export interface ConfirmationGapItem {
+  userId: number
+  employeeName: string
+  employeeNo: string
+  boardId: BoardId
+  boardName: string
+  missingEmployeeConfirmation: boolean
+  missingManagerConfirmation: boolean
+  archivedStatus: 'draft' | 'ready' | 'archived'
+}
+
+export interface BoardResponsibilityConfig {
+  boardId: BoardId
+  boardName: string
+  leaderUserId?: number
+  leaderName: string
+  managerUserId?: number
+  managerName: string
+  officeCoordinatorUserId?: number
+  officeCoordinatorName: string
+}
+
+export interface ManagedTaskDeadlinePolicy {
+  requireDeadlineAt: boolean
+  overdueLocked: boolean
+  message: string
+}
+
 export interface TemplateUpdatePayload {
   title?: string
   standard?: string
@@ -335,6 +470,11 @@ export interface AssessmentBootstrapPayload {
   rectifications: Array<RectificationItem & { updatedAt?: string; closedAt?: string }>
   reviewTodoItems: AssessmentReviewTodoItem[]
   reviewLogs: AssessmentReviewLog[]
+  performanceResults: PerformanceResult[]
+  performanceSummary: PerformanceSummary
+  riskSummary: RiskSummary
+  confirmationSummary: ConfirmationSummary
+  confirmationGaps: ConfirmationGapItem[]
   cycleStatusActions: CycleStatusAction[]
   myTodoSummary: MyTodoSummary
   myAssessmentGroups: MyAssessmentGroups
@@ -346,12 +486,24 @@ export interface AssessmentRecordPayload {
   status: AssessmentStatus
   remark?: string
   rectification?: string
+  evidenceText?: string
+  targetUserId?: number
 }
 
 export interface TaskRecordPayload {
   taskId: string
   status: AssessmentStatus
   remark?: string
+  targetUserId?: number
+}
+
+export interface AssessmentAssistPayload {
+  targetUser: EmployeeProfile & { userId?: number }
+  currentCycle: AssessmentCycle
+  assessmentItems: AssessmentItem[]
+  tasks: TaskItem[]
+  assessmentRecords: Record<string, AssessmentRecordDraft>
+  taskRecords: Record<string, TaskRecordDraft>
 }
 
 export interface ReviewActionPayload {

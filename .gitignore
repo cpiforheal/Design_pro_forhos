@@ -13,3 +13,5 @@ src/types/import/components.d.ts
 # Local SQLite data
 server/data/*.sqlite
 server/data/*.sqlite-*
+.codex-runtime/
+%USERPROFILE%/
