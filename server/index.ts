@@ -1,8 +1,13 @@
-﻿import express, { NextFunction, Request, Response } from 'express'
+﻿import fs from 'node:fs'
+import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import express, { NextFunction, Request, Response } from 'express'
 import cors from 'cors'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import multer from 'multer'
 import {
+  addTaskEvidenceAttachment,
   closeRectification,
   confirmPerformance,
   createAccountUser,
@@ -12,6 +17,7 @@ import {
   getAssessmentBootstrap,
   getAssessmentAssist,
   getAssessmentExport,
+  getTaskEvidenceAttachmentForDownload,
   getDatabase,
   getReviewLogs,
   getUserPermissions,
@@ -26,6 +32,7 @@ import {
   publishManagedBoardTask,
   reviewRecord,
   createAssessmentCycle,
+  deleteTaskEvidenceAttachment,
   saveAssessmentRecord,
   saveTaskRecord,
   submitAssessment,
@@ -42,6 +49,45 @@ import {
 const app = express()
 const port = Number(process.env.HOSPITAL_API_PORT || 3010)
 const jwtSecret = process.env.HOSPITAL_JWT_SECRET || 'hospital-assessment-local-secret'
+const taskEvidenceUploadDir = path.resolve(process.cwd(), 'server/data/uploads/task-evidence')
+const taskEvidenceMaxSize = 20 * 1024 * 1024
+const taskEvidenceMimeTypes = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/x-rar-compressed',
+  'application/x-7z-compressed'
+])
+const taskEvidenceUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => {
+      fs.mkdirSync(taskEvidenceUploadDir, { recursive: true })
+      callback(null, taskEvidenceUploadDir)
+    },
+    filename: (_req, file, callback) => {
+      const ext = path.extname(file.originalname)
+      callback(null, `${Date.now()}-${randomUUID()}${ext}`)
+    }
+  }),
+  limits: { fileSize: taskEvidenceMaxSize },
+  fileFilter: (_req, file, callback) => {
+    if (taskEvidenceMimeTypes.has(file.mimetype)) {
+      callback(null, true)
+      return
+    }
+    callback(new Error('仅支持图片、PDF、Office 文档和压缩包作为佐证材料'))
+  }
+})
 
 interface JwtPayload {
   userId: number
@@ -405,6 +451,72 @@ app.post('/api/assessment/tasks/records', authMiddleware, async (req, res, next)
       msg: '任务记录已保存',
       data: await saveTaskRecord(req.auth!.userId, req.body)
     })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/assessment/tasks/evidence', authMiddleware, (req, res, next) => {
+  taskEvidenceUpload.single('file')(req, res, async (error) => {
+    if (error) {
+      const message =
+        error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE'
+          ? '佐证材料单个文件不能超过 20MB'
+          : error instanceof Error
+            ? error.message
+            : '佐证材料上传失败'
+      res.status(400).json({ code: 400, msg: message, data: null })
+      return
+    }
+    const file = req.file
+    try {
+      const taskId = String(req.body.taskId || '')
+      if (!taskId || !file) {
+        if (file?.path) fs.unlink(file.path, () => {})
+        res.status(400).json({ code: 400, msg: '请选择任务和佐证材料', data: null })
+        return
+      }
+      res.json({
+        code: 200,
+        msg: '佐证材料已上传',
+        data: await addTaskEvidenceAttachment(req.auth!.userId, {
+          taskId,
+          targetUserId: req.body.targetUserId ? Number(req.body.targetUserId) : undefined,
+          originalName: Buffer.from(file.originalname, 'latin1').toString('utf8'),
+          storedName: file.filename,
+          mimeType: file.mimetype,
+          size: file.size,
+          filePath: file.path
+        })
+      })
+    } catch (uploadError) {
+      if (file?.path) fs.unlink(file.path, () => {})
+      next(uploadError)
+    }
+  })
+})
+
+app.delete('/api/assessment/tasks/evidence/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const result = await deleteTaskEvidenceAttachment(req.auth!.userId, Number(req.params.id))
+    if (result.filePath) fs.unlink(result.filePath, () => {})
+    res.json({ code: 200, msg: '佐证材料已删除', data: result.bootstrap })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/assessment/tasks/evidence/:id/download', authMiddleware, async (req, res, next) => {
+  try {
+    const attachment = await getTaskEvidenceAttachmentForDownload(
+      req.auth!.userId,
+      Number(req.params.id)
+    )
+    if (!fs.existsSync(attachment.filePath)) {
+      res.status(404).json({ code: 404, msg: '佐证材料文件不存在', data: null })
+      return
+    }
+    res.download(attachment.filePath, attachment.originalName)
   } catch (error) {
     next(error)
   }

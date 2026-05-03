@@ -173,6 +173,7 @@ export interface EvaluationDraft {
 export interface TaskDraft {
   status: AssessmentStatus
   remark: string
+  evidenceText?: string
   workflowStatus?: WorkflowStatus
   submittedAt?: string
   reviewedAt?: string
@@ -290,6 +291,8 @@ export interface TaskRecordDraft extends TaskDraft {
 export interface AssessmentReviewTodoItem extends AssessmentTodoItem {
   recordType: 'assessment' | 'task'
   recordId: number
+  evidenceText?: string
+  attachments?: EvidenceAttachment[]
 }
 
 export interface MyTodoSummary {
@@ -494,6 +497,7 @@ export interface TaskRecordPayload {
   taskId: string
   status: AssessmentStatus
   remark?: string
+  evidenceText?: string
   targetUserId?: number
 }
 

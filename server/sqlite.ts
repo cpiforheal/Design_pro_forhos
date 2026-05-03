@@ -108,7 +108,29 @@ export interface SaveTaskRecordPayload {
   taskId: string
   status: 'completed' | 'pending' | 'na'
   remark?: string
+  evidenceText?: string
   targetUserId?: number
+}
+
+export interface TaskEvidenceFilePayload {
+  taskId: string
+  targetUserId?: number
+  originalName: string
+  storedName: string
+  mimeType: string
+  size: number
+  filePath: string
+}
+
+export interface TaskEvidenceDownload {
+  filePath: string
+  originalName: string
+  mimeType: string
+}
+
+export interface TaskEvidenceDeleteResult {
+  filePath: string
+  bootstrap: Awaited<ReturnType<typeof getAssessmentBootstrap>>
 }
 
 export interface ReviewActionPayload {
@@ -574,17 +596,23 @@ export async function saveTaskRecord(userId: number, payload: SaveTaskRecordPayl
   }
   const existingRecord = await getTaskRecord(cycle.id, target.id, payload.taskId)
   ensureEditableRecordWorkflow(String(existingRecord?.workflow_status || 'draft'), '任务记录')
+  if (payload.status === 'completed') {
+    if (!existingRecord) throw new Error('请先上传至少 1 份佐证材料，再标记任务已完成')
+    const attachmentCount = await getTaskEvidenceAttachmentCount(Number(existingRecord.id))
+    if (attachmentCount < 1) throw new Error('请先上传至少 1 份佐证材料，再标记任务已完成')
+  }
   const nextWorkflowStatus = resolveEditableWorkflowStatus(
     String(existingRecord?.workflow_status || 'draft')
   )
 
   await runSql(
     `
-    INSERT INTO task_records (cycle_id, user_id, task_id, status, remark, workflow_status, updated_at)
-    VALUES ($cycleId, $userId, $taskId, $status, $remark, $workflowStatus, CURRENT_TIMESTAMP)
+    INSERT INTO task_records (cycle_id, user_id, task_id, status, remark, evidence_text, workflow_status, updated_at)
+    VALUES ($cycleId, $userId, $taskId, $status, $remark, $evidenceText, $workflowStatus, CURRENT_TIMESTAMP)
     ON CONFLICT(cycle_id, user_id, task_id) DO UPDATE SET
       status = excluded.status,
       remark = excluded.remark,
+      evidence_text = excluded.evidence_text,
       workflow_status = $workflowStatus,
       updated_at = CURRENT_TIMESTAMP
   `,
@@ -594,6 +622,7 @@ export async function saveTaskRecord(userId: number, payload: SaveTaskRecordPayl
       $taskId: payload.taskId,
       $status: payload.status,
       $remark: payload.remark || '',
+      $evidenceText: payload.evidenceText || '',
       $workflowStatus: nextWorkflowStatus
     }
   )
@@ -632,6 +661,90 @@ export async function saveTaskRecord(userId: number, payload: SaveTaskRecordPayl
   return getAssessmentBootstrap(userId)
 }
 
+export async function addTaskEvidenceAttachment(userId: number, payload: TaskEvidenceFilePayload) {
+  const { actor, cycle, target, record } = await ensureEditableTaskEvidenceContext(
+    userId,
+    payload.taskId,
+    payload.targetUserId
+  )
+  await runSql(
+    `
+    INSERT INTO task_evidence_attachments (
+      record_id, original_name, stored_name, mime_type, file_size, file_path, uploaded_by, uploaded_at
+    )
+    VALUES ($recordId, $originalName, $storedName, $mimeType, $fileSize, $filePath, $uploadedBy, CURRENT_TIMESTAMP)
+  `,
+    {
+      $recordId: Number(record.id),
+      $originalName: payload.originalName,
+      $storedName: payload.storedName,
+      $mimeType: payload.mimeType,
+      $fileSize: payload.size,
+      $filePath: payload.filePath,
+      $uploadedBy: actor.user.id
+    }
+  )
+  await insertReviewLog(
+    cycle.id,
+    'task',
+    Number(record.id),
+    target.id,
+    actor.user.id,
+    'draft',
+    `上传佐证材料：${payload.originalName}`
+  )
+  persistDatabase()
+  return getAssessmentBootstrap(userId)
+}
+
+export async function deleteTaskEvidenceAttachment(
+  userId: number,
+  attachmentId: number
+): Promise<TaskEvidenceDeleteResult> {
+  const actor = await requireActor(userId)
+  const row = await getTaskEvidenceAttachmentRow(attachmentId)
+  if (!row) throw new Error('佐证材料不存在')
+  if (!canSeeUserRow(actor, String(row.board_id), Number(row.user_id)))
+    throw new Error('无权访问该佐证材料')
+  if (Number(row.user_id) !== actor.user.id) {
+    ensureReviewer(actor)
+    ensureCanReviewBoard(actor, String(row.board_id))
+  }
+  await ensureCycleIsWritable(String(row.cycle_id))
+  ensureEditableRecordWorkflow(String(row.workflow_status || 'draft'), '任务记录')
+  await runSql(`DELETE FROM task_evidence_attachments WHERE id = $id`, { $id: attachmentId })
+  await insertReviewLog(
+    String(row.cycle_id),
+    'task',
+    Number(row.record_id),
+    Number(row.user_id),
+    actor.user.id,
+    'draft',
+    `删除佐证材料：${String(row.original_name)}`
+  )
+  persistDatabase()
+  return {
+    filePath: String(row.file_path || ''),
+    bootstrap: await getAssessmentBootstrap(userId)
+  }
+}
+
+export async function getTaskEvidenceAttachmentForDownload(
+  userId: number,
+  attachmentId: number
+): Promise<TaskEvidenceDownload> {
+  const actor = await requireActor(userId)
+  const row = await getTaskEvidenceAttachmentRow(attachmentId)
+  if (!row) throw new Error('佐证材料不存在')
+  if (!canSeeUserRow(actor, String(row.board_id), Number(row.user_id)))
+    throw new Error('无权访问该佐证材料')
+  return {
+    filePath: String(row.file_path || ''),
+    originalName: String(row.original_name || '佐证材料'),
+    mimeType: String(row.mime_type || 'application/octet-stream')
+  }
+}
+
 export async function submitAssessment(userId: number) {
   const actor = await requireActor(userId)
   const cycle = await getCurrentCycle()
@@ -647,7 +760,7 @@ export async function submitAssessment(userId: number) {
   }
   for (const task of tasks) {
     if (!(await getTaskRecord(cycle.id, actor.user.id, task.id))) {
-      await saveTaskRecord(userId, { taskId: task.id, status: 'completed' })
+      await saveTaskRecord(userId, { taskId: task.id, status: 'pending' })
     }
   }
 
@@ -1225,6 +1338,7 @@ async function migrateAndSeed(database: Database): Promise<void> {
       task_id TEXT NOT NULL,
       status TEXT NOT NULL,
       remark TEXT NOT NULL DEFAULT '',
+      evidence_text TEXT NOT NULL DEFAULT '',
       workflow_status TEXT NOT NULL DEFAULT 'draft',
       submitted_at TEXT,
       reviewed_at TEXT,
@@ -1232,6 +1346,17 @@ async function migrateAndSeed(database: Database): Promise<void> {
       review_comment TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(cycle_id, user_id, task_id)
+    );
+    CREATE TABLE IF NOT EXISTS task_evidence_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      record_id INTEGER NOT NULL,
+      original_name TEXT NOT NULL,
+      stored_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT '',
+      file_size INTEGER NOT NULL DEFAULT 0,
+      file_path TEXT NOT NULL,
+      uploaded_by INTEGER NOT NULL,
+      uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS rectifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1316,6 +1441,7 @@ async function migrateAndSeed(database: Database): Promise<void> {
   ensureColumn(database, 'tasks', 'acceptance_status', "TEXT NOT NULL DEFAULT '待验收'")
   ensureColumn(database, 'tasks', 'overdue_locked', 'INTEGER NOT NULL DEFAULT 0')
   ensureColumn(database, 'tasks', 'collaboration_note', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(database, 'task_records', 'evidence_text', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(database, 'rectifications', 'deadline', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(database, 'rectifications', 'review_comment', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(database, 'rectifications', 'evidence_text', "TEXT NOT NULL DEFAULT ''")
@@ -1329,6 +1455,9 @@ async function migrateAndSeed(database: Database): Promise<void> {
     SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP),
         updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)
     WHERE created_at IS NULL OR updated_at IS NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_task_evidence_attachments_record
+    ON task_evidence_attachments(record_id);
   `)
 
   database.exec(`
@@ -1942,7 +2071,13 @@ async function getTaskRecordMap(cycleId: string, userId: number) {
     'SELECT * FROM task_records WHERE cycle_id = $cycleId AND user_id = $userId',
     { $cycleId: cycleId, $userId: userId }
   )
-  return Object.fromEntries(rows.map((row) => [String(row.task_id), mapTaskRecordDraft(row)]))
+  const entries = await Promise.all(
+    rows.map(async (row) => [
+      String(row.task_id),
+      { ...mapTaskRecordDraft(row), attachments: await getTaskEvidenceAttachments(Number(row.id)) }
+    ])
+  )
+  return Object.fromEntries(entries)
 }
 
 async function getAssessmentRecord(cycleId: string, userId: number, itemId: string) {
@@ -1959,6 +2094,89 @@ async function getTaskRecord(cycleId: string, userId: number, taskId: string) {
     await queryRows(
       'SELECT * FROM task_records WHERE cycle_id = $cycleId AND user_id = $userId AND task_id = $taskId LIMIT 1',
       { $cycleId: cycleId, $userId: userId, $taskId: taskId }
+    )
+  )[0]
+}
+
+async function ensureEditableTaskEvidenceContext(
+  userId: number,
+  taskId: string,
+  targetUserId?: number
+) {
+  const actor = await requireActor(userId)
+  const target = await resolveRecordTarget(actor, targetUserId)
+  const cycle = await getCurrentCycle()
+  const task = (
+    await queryRows('SELECT * FROM tasks WHERE id = $id AND enabled = 1 LIMIT 1', {
+      $id: taskId
+    })
+  )[0]
+  if (!task) throw new Error('任务不存在或已停用')
+  ensureCanAccessBoard(actor, String(task.board_id))
+  if (!(await canUserSeeTask(taskId, target.id))) throw new Error('该任务未分配给当前员工')
+  await ensureCycleCanBeEditedByEmployee(cycle, target.id)
+  if (isAfterDeadline(task.deadline_at)) {
+    await runSql(`UPDATE tasks SET overdue_locked = 1 WHERE id = $id`, { $id: taskId })
+    persistDatabase()
+    throw new Error('任务已超过截止时间，需负责人延期后才能提交')
+  }
+  let record = await getTaskRecord(cycle.id, target.id, taskId)
+  ensureEditableRecordWorkflow(String(record?.workflow_status || 'draft'), '任务记录')
+  if (!record) {
+    await runSql(
+      `
+      INSERT INTO task_records (cycle_id, user_id, task_id, status, remark, evidence_text, workflow_status, updated_at)
+      VALUES ($cycleId, $userId, $taskId, 'pending', '', '', 'draft', CURRENT_TIMESTAMP)
+    `,
+      { $cycleId: cycle.id, $userId: target.id, $taskId: taskId }
+    )
+    record = await getTaskRecord(cycle.id, target.id, taskId)
+  }
+  if (!record) throw new Error('任务记录创建失败，请稍后重试')
+  return { actor, target, cycle, task, record }
+}
+
+async function getTaskEvidenceAttachmentCount(recordId: number) {
+  const row = (
+    await queryRows(
+      'SELECT COUNT(*) AS count FROM task_evidence_attachments WHERE record_id = $recordId',
+      { $recordId: recordId }
+    )
+  )[0]
+  return Number(row?.count || 0)
+}
+
+async function getTaskEvidenceAttachments(recordId: number) {
+  const rows = await queryRows(
+    `
+    SELECT id, original_name, mime_type, uploaded_at
+    FROM task_evidence_attachments
+    WHERE record_id = $recordId
+    ORDER BY uploaded_at DESC, id DESC
+  `,
+    { $recordId: recordId }
+  )
+  return rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.original_name || '佐证材料'),
+    type: String(row.mime_type || '').startsWith('image/') ? 'image' : 'file',
+    url: `/api/assessment/tasks/evidence/${row.id}/download`,
+    uploadedAt: String(row.uploaded_at || '')
+  }))
+}
+
+async function getTaskEvidenceAttachmentRow(attachmentId: number) {
+  return (
+    await queryRows(
+      `
+      SELECT tea.*, tea.id AS attachment_id, tr.id AS record_id, tr.cycle_id, tr.user_id, tr.workflow_status, t.board_id
+      FROM task_evidence_attachments tea
+      INNER JOIN task_records tr ON tr.id = tea.record_id
+      INNER JOIN tasks t ON t.id = tr.task_id
+      WHERE tea.id = $id
+      LIMIT 1
+    `,
+      { $id: attachmentId }
     )
   )[0]
 }
@@ -1999,7 +2217,7 @@ async function getReviewTodoItems(actor: { user: AccountUser; permissions: Accou
     ORDER BY ar.updated_at DESC
   `)
   const taskRows = await queryRows(`
-    SELECT tr.id, tr.task_id, tr.status, tr.workflow_status, tr.remark, tr.user_id, tr.cycle_id, t.title, t.board_id, b.name AS board_name, u.display_name AS owner_name, t.deadline
+    SELECT tr.id, tr.task_id, tr.status, tr.workflow_status, tr.remark, tr.evidence_text, tr.user_id, tr.cycle_id, t.title, t.board_id, b.name AS board_name, u.display_name AS owner_name, t.deadline
     FROM task_records tr
     INNER JOIN tasks t ON t.id = tr.task_id
     INNER JOIN boards b ON b.id = t.board_id
@@ -2024,9 +2242,11 @@ async function getReviewTodoItems(actor: { user: AccountUser; permissions: Accou
       workflowStatus: String(row.workflow_status),
       actionText: row.workflow_status === 'submitted' ? '立即审核' : '跟进整改'
     }))
-  const taskTodos = taskRows
-    .filter((row) => canSeeUserRow(actor, String(row.board_id), Number(row.user_id)))
-    .map((row) => ({
+  const visibleTaskRows = taskRows.filter((row) =>
+    canSeeUserRow(actor, String(row.board_id), Number(row.user_id))
+  )
+  const taskTodos = await Promise.all(
+    visibleTaskRows.map(async (row) => ({
       id: `task:${row.id}`,
       recordType: 'task',
       recordId: Number(row.id),
@@ -2039,8 +2259,11 @@ async function getReviewTodoItems(actor: { user: AccountUser; permissions: Accou
       deadline: String(row.deadline),
       priority: row.workflow_status === 'returned' ? 'urgent' : 'warning',
       workflowStatus: String(row.workflow_status),
-      actionText: row.workflow_status === 'submitted' ? '立即审核' : '跟进任务'
+      actionText: row.workflow_status === 'submitted' ? '立即审核' : '跟进任务',
+      evidenceText: String(row.evidence_text || ''),
+      attachments: await getTaskEvidenceAttachments(Number(row.id))
     }))
+  )
   return [...assessmentTodos, ...taskTodos]
 }
 
@@ -2945,6 +3168,7 @@ function mapTaskRecordDraft(row: Record<string, unknown>) {
     recordId: Number(row.id),
     status: String(row.status),
     remark: String(row.remark || ''),
+    evidenceText: String(row.evidence_text || ''),
     workflowStatus: String(row.workflow_status || 'draft'),
     submittedAt: String(row.submitted_at || ''),
     reviewedAt: String(row.reviewed_at || ''),

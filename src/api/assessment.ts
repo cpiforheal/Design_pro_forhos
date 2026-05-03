@@ -1,4 +1,5 @@
 ﻿import request from '@/utils/http'
+import { useUserStore } from '@/store/modules/user'
 import type {
   AssessmentBootstrapPayload,
   AssessmentAssistPayload,
@@ -27,6 +28,42 @@ export function saveAssessmentRecord(params: AssessmentRecordPayload) {
 
 export function saveTaskRecord(params: TaskRecordPayload) {
   return request.post<AssessmentBootstrapPayload>({ url: '/api/assessment/tasks/records', params })
+}
+
+export function uploadTaskEvidence(taskId: string, file: File) {
+  const formData = new FormData()
+  formData.append('taskId', taskId)
+  formData.append('file', file)
+  return request.post<AssessmentBootstrapPayload>({
+    url: '/api/assessment/tasks/evidence',
+    data: formData,
+    showSuccessMessage: true
+  })
+}
+
+export function deleteTaskEvidence(id: string | number) {
+  return request.del<AssessmentBootstrapPayload>({
+    url: `/api/assessment/tasks/evidence/${id}`,
+    showSuccessMessage: true
+  })
+}
+
+export async function downloadTaskEvidence(id: string | number, fileName: string) {
+  const { accessToken } = useUserStore()
+  const baseUrl = import.meta.env.VITE_API_URL || ''
+  const response = await fetch(`${baseUrl}/api/assessment/tasks/evidence/${id}/download`, {
+    headers: accessToken ? { Authorization: accessToken } : {}
+  })
+  if (!response.ok) throw new Error('佐证材料下载失败')
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }
 
 export function submitCurrentAssessment() {

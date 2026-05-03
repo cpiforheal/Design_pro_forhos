@@ -216,7 +216,8 @@
       taskId,
       targetUserId: assistPayload.value.targetUser.userId,
       status: draft.status,
-      remark: draft.remark
+      remark: draft.remark,
+      evidenceText: draft.evidenceText
     })
     await loadAssist(assistPayload.value.targetUser.userId)
     ElMessage.success('已协助保存任务，并写入日志')
@@ -232,7 +233,13 @@
   }
 
   function createTaskDraft(): TaskRecordDraft {
-    return { status: 'completed' as AssessmentStatus, remark: '', workflowStatus: 'draft' }
+    return {
+      status: 'pending' as AssessmentStatus,
+      remark: '',
+      evidenceText: '',
+      workflowStatus: 'draft',
+      attachments: []
+    }
   }
 </script>
 

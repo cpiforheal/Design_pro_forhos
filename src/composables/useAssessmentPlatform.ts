@@ -4,6 +4,8 @@ import {
   closeAssessmentRectification,
   confirmPerformance,
   createManagedBoardTask,
+  deleteTaskEvidence,
+  downloadTaskEvidence,
   exportAssessmentResult,
   fetchAssessmentBootstrap,
   fetchManagedBoardTasks,
@@ -15,6 +17,7 @@ import {
   saveAssessmentRecord,
   saveTaskRecord,
   submitCurrentAssessment,
+  uploadTaskEvidence,
   updateManagedBoardTask
 } from '@/api/assessment'
 import {
@@ -336,7 +339,12 @@ export function useAssessmentPlatform() {
     const drafts = scope === 'hospital' ? hospitalTaskDrafts.value : boardTaskDrafts.value
     const current = drafts[taskId] ?? createDefaultTaskDraft()
     await saveAndApply(() =>
-      saveTaskRecord({ taskId, status: nextStatus(current.status), remark: current.remark })
+      saveTaskRecord({
+        taskId,
+        status: nextTaskStatus(current.status),
+        remark: current.remark,
+        evidenceText: current.evidenceText
+      })
     )
   }
 
@@ -345,9 +353,22 @@ export function useAssessmentPlatform() {
       scope === 'hospital' ? hospitalTaskDrafts.value[taskId] : boardTaskDrafts.value[taskId]
     bootstrap.value = await saveTaskRecord({
       taskId,
-      status: draft?.status ?? 'completed',
-      remark: draft?.remark ?? ''
+      status: draft?.status ?? 'pending',
+      remark: draft?.remark ?? '',
+      evidenceText: draft?.evidenceText ?? ''
     })
+  }
+
+  async function uploadTaskAttachment(taskId: string, file: File) {
+    await saveAndApply(() => uploadTaskEvidence(taskId, file))
+  }
+
+  async function removeTaskAttachment(attachmentId: string | number) {
+    await saveAndApply(() => deleteTaskEvidence(attachmentId))
+  }
+
+  async function downloadTaskAttachment(attachmentId: string | number, fileName: string) {
+    await downloadTaskEvidence(attachmentId, fileName)
   }
 
   function updateAssessmentDraftField(
@@ -357,6 +378,17 @@ export function useAssessmentPlatform() {
     value: string
   ) {
     const draft = scope === 'common' ? commonDrafts.value[itemId] : boardDrafts.value[itemId]
+    if (draft) draft[field] = value
+  }
+
+  function updateTaskDraftField(
+    taskId: string,
+    scope: 'hospital' | 'board',
+    field: 'remark' | 'evidenceText',
+    value: string
+  ) {
+    const draft =
+      scope === 'hospital' ? hospitalTaskDrafts.value[taskId] : boardTaskDrafts.value[taskId]
     if (draft) draft[field] = value
   }
 
@@ -542,7 +574,11 @@ export function useAssessmentPlatform() {
     toggleTask,
     persistAssessment,
     persistTask,
+    uploadTaskAttachment,
+    removeTaskAttachment,
+    downloadTaskAttachment,
     updateAssessmentDraftField,
+    updateTaskDraftField,
     submitAssessment: persistAssessment,
     approveAssessment: persistAssessment,
     returnAssessment: persistAssessment,
@@ -622,13 +658,23 @@ function createDefaultAssessmentDraft(): AssessmentRecordDraft {
 }
 
 function createDefaultTaskDraft(): TaskRecordDraft {
-  return { status: 'completed', remark: '', workflowStatus: 'draft' }
+  return {
+    status: 'pending',
+    remark: '',
+    evidenceText: '',
+    workflowStatus: 'draft',
+    attachments: []
+  }
 }
 
 function nextStatus(status: AssessmentStatus): AssessmentStatus {
   if (status === 'completed') return 'pending'
   if (status === 'pending') return 'na'
   return 'completed'
+}
+
+function nextTaskStatus(status: AssessmentStatus): AssessmentStatus {
+  return status === 'completed' ? 'pending' : 'completed'
 }
 
 function countDone(ids: string[], drafts: Record<string, { status: string }>) {
