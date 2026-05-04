@@ -36,6 +36,17 @@ export const employeeRoutes: AppRouteRecord = {
       }
     },
     {
+      path: 'medical-records',
+      name: 'EmployeeMedicalRecords',
+      component: '/assessment/medical-records',
+      meta: {
+        title: '病历填写',
+        icon: 'ri:file-list-3-line',
+        menuPermission: 'assessment',
+        roles: ['R_EMPLOYEE']
+      }
+    },
+    {
       path: 'rectification',
       name: 'EmployeeMyRectification',
       component: '/assessment/my/rectification',

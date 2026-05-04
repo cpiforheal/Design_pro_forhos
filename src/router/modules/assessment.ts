@@ -58,6 +58,17 @@ export const assessmentRoutes: AppRouteRecord = {
       }
     },
     {
+      path: 'medical-records',
+      name: 'AssessmentMedicalRecords',
+      component: '/assessment/medical-records',
+      meta: {
+        title: '病历协作',
+        icon: 'ri:file-list-3-line',
+        menuPermission: 'assessment',
+        roles: ['R_SUPER', 'R_LEADER', 'R_MANAGER']
+      }
+    },
+    {
       path: 'rectification',
       name: 'AssessmentRectification',
       component: '/assessment/rectification',

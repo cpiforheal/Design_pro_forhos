@@ -46,6 +46,24 @@
       <ElFormItem label="岗位">
         <ElInput v-model="form.position" placeholder="请输入岗位名称" />
       </ElFormItem>
+      <ElFormItem label="病历权限">
+        <ElSelect
+          v-model="form.medicalRecordStages"
+          multiple
+          clearable
+          collapse-tags
+          collapse-tags-tooltip
+          placeholder="不参与病历协作可留空"
+          class="w-full"
+        >
+          <ElOption
+            v-for="stage in medicalRecordStageOptions"
+            :key="stage.value"
+            :label="stage.label"
+            :value="stage.value"
+          />
+        </ElSelect>
+      </ElFormItem>
       <ElFormItem label="系统权限">
         <ElRadioGroup v-model="form.roleCode">
           <ElRadioButton
@@ -75,6 +93,7 @@
   import { boards } from '@/data/assessmentData'
   import { createAccountUser, fetchRoleGrants } from '@/api/assessment-admin'
   import type { BoardId, PermissionGrant, SystemRoleCode } from '@/types/assessment'
+  import { medicalRecordStageOptions, type MedicalRecordStageKey } from '@/types/medicalRecord'
 
   const router = useRouter()
   const saving = ref(false)
@@ -93,6 +112,7 @@
     mobile: '',
     boardId: 'medical' as BoardId,
     position: '',
+    medicalRecordStages: [] as MedicalRecordStageKey[],
     roleCode: 'R_EMPLOYEE' as SystemRoleCode,
     elderlyFriendly: true
   })
@@ -119,6 +139,7 @@
         boardId: form.boardId,
         position: form.position,
         mobile: form.mobile,
+        medicalRecordStages: form.medicalRecordStages,
         elderlyFriendly: form.elderlyFriendly
       })
       ElMessage.success('用户已写入 SQLite，可使用新账号登录')

@@ -13,11 +13,13 @@ import {
   fetchReviewLogs,
   managerConfirmPerformance,
   publishManagedBoardTask,
+  reviewGroupConfirmPerformance,
   reviewAssessmentRecord,
   saveAssessmentRecord,
   saveTaskRecord,
   submitCurrentAssessment,
   uploadTaskEvidence,
+  updateAssessmentRectification,
   updateManagedBoardTask
 } from '@/api/assessment'
 import {
@@ -46,7 +48,9 @@ import type {
   TemplateUpdatePayload,
   AssessmentReviewLog,
   PerformanceResult,
-  BoardResponsibilityConfig
+  ReviewGroupConfirmPayload,
+  BoardResponsibilityConfig,
+  RectificationUpdatePayload
 } from '@/types/assessment'
 import {
   buildEmployeeAssessmentSnapshot,
@@ -187,6 +191,7 @@ export function useAssessmentPlatform() {
         totalEmployees: 0,
         employeeConfirmedCount: 0,
         managerConfirmedCount: 0,
+        reviewGroupConfirmedCount: 0,
         readyToArchiveCount: 0,
         unconfirmedCount: 0
       }
@@ -414,6 +419,9 @@ export function useAssessmentPlatform() {
   async function closeRectification(id: string | number) {
     await saveAndApply(() => closeAssessmentRectification(id, { comment: '整改已销号' }))
   }
+  async function updateRectification(id: string | number, payload: RectificationUpdatePayload) {
+    await saveAndApply(() => updateAssessmentRectification(id, payload))
+  }
 
   async function reloadAdminConfig() {
     cycleList.value = await fetchAssessmentCycles()
@@ -451,6 +459,13 @@ export function useAssessmentPlatform() {
 
   async function managerConfirmPerformanceResult(userId: number) {
     await saveAndApply(() => managerConfirmPerformance(userId, '负责人电子确认本周期绩效结果'))
+    performanceResultList.value = bootstrap.value?.performanceResults ?? []
+  }
+  async function reviewGroupConfirmPerformanceResult(
+    userId: number,
+    payload: ReviewGroupConfirmPayload | string = '考核小组复核本周期绩效结果'
+  ) {
+    await saveAndApply(() => reviewGroupConfirmPerformance(userId, payload))
     performanceResultList.value = bootstrap.value?.performanceResults ?? []
   }
 
@@ -586,6 +601,7 @@ export function useAssessmentPlatform() {
     submitCurrentCycle,
     approveReview,
     returnReview,
+    updateRectification,
     closeRectification,
     reloadAdminConfig,
     updateTemplate,
@@ -594,6 +610,7 @@ export function useAssessmentPlatform() {
     reloadReviewLogs,
     reloadPerformanceResults,
     confirmMyPerformance,
+    reviewGroupConfirmPerformanceResult,
     managerConfirmPerformanceResult,
     reloadBoardResponsibilityConfig,
     updateBoardResponsibility,

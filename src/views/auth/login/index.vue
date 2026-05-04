@@ -1,203 +1,171 @@
 <!-- 登录页面 -->
 <template>
-  <div class="flex w-full h-screen">
-    <LoginLeftView />
-
-    <div class="relative flex-1">
-      <AuthTopBar />
-
-      <div class="auth-right-wrap">
-        <div class="form">
-          <h3 class="title">{{ $t('login.title') }}</h3>
-          <p class="sub-title">{{ $t('login.subTitle') }}</p>
-          <ElForm
-            ref="formRef"
-            :model="formData"
-            :rules="rules"
-            :key="formKey"
-            @keyup.enter="handleSubmit"
-            style="margin-top: 25px"
-          >
-            <ElFormItem prop="account">
-              <ElSelect v-model="formData.account" @change="setupAccount">
-                <ElOption
-                  v-for="account in accounts"
-                  :key="account.key"
-                  :label="account.label"
-                  :value="account.key"
-                >
-                  <span>{{ account.label }}</span>
-                </ElOption>
-              </ElSelect>
-            </ElFormItem>
-            <ElFormItem prop="username">
-              <ElInput
-                class="custom-height"
-                :placeholder="$t('login.placeholder.username')"
-                v-model.trim="formData.username"
-              />
-            </ElFormItem>
-            <ElFormItem prop="password">
-              <ElInput
-                class="custom-height"
-                :placeholder="$t('login.placeholder.password')"
-                v-model.trim="formData.password"
-                type="password"
-                autocomplete="off"
-                show-password
-              />
-            </ElFormItem>
-
-            <!-- 推拽验证 -->
-            <div class="relative pb-5 mt-6">
-              <div
-                class="relative z-[2] overflow-hidden select-none rounded-lg border border-transparent tad-300"
-                :class="{ '!border-[#FF4E4F]': !isPassing && isClickPass }"
-              >
-                <ArtDragVerify
-                  ref="dragVerify"
-                  v-model:value="isPassing"
-                  :text="$t('login.sliderText')"
-                  textColor="var(--art-gray-700)"
-                  :successText="$t('login.sliderSuccessText')"
-                  progressBarBg="var(--main-color)"
-                  :background="isDark ? '#26272F' : '#F1F1F4'"
-                  handlerBg="var(--default-box-color)"
-                />
-              </div>
-              <p
-                class="absolute top-0 z-[1] px-px mt-2 text-xs text-[#f56c6c] tad-300"
-                :class="{ 'translate-y-10': !isPassing && isClickPass }"
-              >
-                {{ $t('login.placeholder.slider') }}
-              </p>
-            </div>
-
-            <div class="flex-cb mt-2 text-sm">
-              <ElCheckbox v-model="formData.rememberPassword">{{
-                $t('login.rememberPwd')
-              }}</ElCheckbox>
-              <RouterLink class="text-theme" :to="{ name: 'ForgetPassword' }">{{
-                $t('login.forgetPwd')
-              }}</RouterLink>
-            </div>
-
-            <div style="margin-top: 30px">
-              <ElButton
-                class="w-full custom-height"
-                type="primary"
-                @click="handleSubmit"
-                :loading="loading"
-                v-ripple
-              >
-                {{ $t('login.btnText') }}
-              </ElButton>
-            </div>
-
-            <div class="mt-5 text-sm text-gray-600">
-              <span>{{ $t('login.noAccount') }}</span>
-              <RouterLink class="text-theme" :to="{ name: 'Register' }">{{
-                $t('login.register')
-              }}</RouterLink>
-            </div>
-          </ElForm>
+  <div class="login-page">
+    <section class="login-panel">
+      <div class="brand">
+        <img class="brand-logo" :src="hospitalLogo" alt="医院 logo" />
+        <div>
+          <p class="brand-kicker">医院内部管理平台</p>
+          <h1>{{ systemName }}</h1>
         </div>
       </div>
-    </div>
+
+      <div class="login-copy">
+        <p>Performance & Medical Record</p>
+        <h2>绩效考核与病历协作系统</h2>
+        <span>用于院内任务闭环、岗位考核、整改追踪和病历协作填写。</span>
+      </div>
+
+      <div class="form-card">
+        <div class="form-heading">
+          <h3>账号登录</h3>
+          <p>请输入管理员分配的账号和密码</p>
+        </div>
+
+        <ElForm
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          :key="formKey"
+          @keyup.enter="handleSubmit"
+          class="login-form"
+        >
+          <ElFormItem prop="username">
+            <ElInput
+              class="login-input"
+              placeholder="请输入账号"
+              v-model.trim="formData.username"
+            />
+          </ElFormItem>
+          <ElFormItem prop="password">
+            <ElInput
+              class="login-input"
+              placeholder="请输入密码"
+              v-model.trim="formData.password"
+              type="password"
+              autocomplete="off"
+              show-password
+            />
+          </ElFormItem>
+
+          <div class="login-meta">
+            <ElCheckbox v-model="formData.rememberPassword">记住登录状态</ElCheckbox>
+            <span>内部系统请勿外借账号</span>
+          </div>
+
+          <div class="submit-wrap">
+            <ElButton
+              class="login-submit"
+              type="primary"
+              @click="handleSubmit"
+              :loading="loading"
+              v-ripple
+            >
+              登录系统
+            </ElButton>
+          </div>
+        </ElForm>
+      </div>
+
+      <p class="login-footer">© {{ currentYear }} {{ systemName }} · 内部使用</p>
+    </section>
+
+    <section class="time-panel">
+      <div class="time-orbit time-orbit-one"></div>
+      <div class="time-orbit time-orbit-two"></div>
+      <div class="leaf leaf-one"></div>
+      <div class="leaf leaf-two"></div>
+      <div class="leaf leaf-three"></div>
+
+      <div class="time-card-wrap">
+        <p class="time-kicker">Current Time</p>
+        <h2>当前时间</h2>
+        <p class="date-line">{{ dateText }}</p>
+
+        <div class="time-grid">
+          <div class="time-unit">
+            <span class="time-value">{{ timeParts.hour }}</span>
+            <i></i>
+            <strong>时</strong>
+          </div>
+          <div class="time-unit">
+            <span class="time-value">{{ timeParts.minute }}</span>
+            <i></i>
+            <strong>分</strong>
+          </div>
+          <div class="time-unit seconds">
+            <span :key="timeParts.second" class="time-value">{{ timeParts.second }}</span>
+            <i></i>
+            <strong>秒</strong>
+          </div>
+        </div>
+
+        <div class="time-note">
+          <span></span>
+          <p>以当前设备时间为准，适合院内局域网部署和日常考核打卡查看。</p>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
   import AppConfig from '@/config'
+  import hospitalLogo from '@/assets/images/common/logo1.jpg'
   import { useUserStore } from '@/store/modules/user'
-  import { useI18n } from 'vue-i18n'
   import { HttpError } from '@/utils/http/error'
   import { fetchLogin } from '@/api/auth'
   import { ElNotification, type FormInstance, type FormRules } from 'element-plus'
-  import { useSettingStore } from '@/store/modules/setting'
 
   defineOptions({ name: 'Login' })
 
-  const settingStore = useSettingStore()
-  const { isDark } = storeToRefs(settingStore)
-  const { t, locale } = useI18n()
   const formKey = ref(0)
-
-  // 监听语言切换，重置表单
-  watch(locale, () => {
-    formKey.value++
-  })
-
-  type AccountKey = 'super' | 'admin' | 'user'
-
-  export interface Account {
-    key: AccountKey
-    label: string
-    userName: string
-    password: string
-    roles: string[]
-  }
-
-  const accounts = computed<Account[]>(() => [
-    {
-      key: 'super',
-      label: t('login.roles.super'),
-      userName: 'Super',
-      password: '123456',
-      roles: ['R_SUPER']
-    },
-    {
-      key: 'admin',
-      label: t('login.roles.admin'),
-      userName: 'Admin',
-      password: '123456',
-      roles: ['R_ADMIN']
-    },
-    {
-      key: 'user',
-      label: t('login.roles.user'),
-      userName: 'User',
-      password: '123456',
-      roles: ['R_USER']
-    }
-  ])
-
-  const dragVerify = ref()
-
   const userStore = useUserStore()
   const router = useRouter()
   const route = useRoute()
-  const isPassing = ref(false)
-  const isClickPass = ref(false)
-
   const systemName = AppConfig.systemInfo.name
   const formRef = ref<FormInstance>()
+  const now = ref(new Date())
+  const currentYear = new Date().getFullYear()
+  let timer: ReturnType<typeof setInterval> | undefined
 
   const formData = reactive({
-    account: '',
     username: '',
     password: '',
     rememberPassword: true
   })
 
   const rules = computed<FormRules>(() => ({
-    username: [{ required: true, message: t('login.placeholder.username'), trigger: 'blur' }],
-    password: [{ required: true, message: t('login.placeholder.password'), trigger: 'blur' }]
+    username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+    password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
   }))
 
   const loading = ref(false)
 
+  const timeParts = computed(() => ({
+    hour: pad(now.value.getHours()),
+    minute: pad(now.value.getMinutes()),
+    second: pad(now.value.getSeconds())
+  }))
+
+  const dateText = computed(() =>
+    new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long'
+    }).format(now.value)
+  )
+
   onMounted(() => {
-    setupAccount('super')
+    timer = setInterval(() => {
+      now.value = new Date()
+    }, 1000)
   })
 
-  // 设置账号
-  const setupAccount = (key: AccountKey) => {
-    const selectedAccount = accounts.value.find((account: Account) => account.key === key)
-    formData.account = key
-    formData.username = selectedAccount?.userName ?? ''
-    formData.password = selectedAccount?.password ?? ''
-  }
+  onBeforeUnmount(() => {
+    if (timer) clearInterval(timer)
+  })
 
   // 登录
   const handleSubmit = async () => {
@@ -207,12 +175,6 @@
       // 表单验证
       const valid = await formRef.value.validate()
       if (!valid) return
-
-      // 拖拽验证
-      if (!isPassing.value) {
-        isClickPass.value = true
-        return
-      }
 
       loading.value = true
 
@@ -250,24 +212,22 @@
       }
     } finally {
       loading.value = false
-      resetDragVerify()
     }
   }
 
-  // 重置拖拽验证
-  const resetDragVerify = () => {
-    dragVerify.value.reset()
+  function pad(value: number) {
+    return String(value).padStart(2, '0')
   }
 
   // 登录成功提示
   const showLoginSuccessNotice = () => {
     setTimeout(() => {
       ElNotification({
-        title: t('login.success.title'),
+        title: '登录成功',
         type: 'success',
         duration: 2500,
         zIndex: 10000,
-        message: `${t('login.success.message')}, ${systemName}!`
+        message: `欢迎进入${systemName}`
       })
     }, 1000)
   }
@@ -278,7 +238,26 @@
 </style>
 
 <style lang="scss" scoped>
-  :deep(.el-select__wrapper) {
-    height: 40px !important;
+  :deep(.el-input__wrapper) {
+    height: 52px !important;
+    padding: 0 18px;
+    background: rgb(255 255 255 / 82%);
+    border-radius: 16px;
+    box-shadow: inset 0 0 0 1px rgb(32 91 65 / 12%);
+  }
+
+  :deep(.el-input__wrapper.is-focus) {
+    box-shadow:
+      inset 0 0 0 1px rgb(21 118 74 / 46%),
+      0 12px 30px rgb(19 99 61 / 14%);
+  }
+
+  :deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
+    background-color: #1f9a63;
+    border-color: #1f9a63;
+  }
+
+  :deep(.el-checkbox__input.is-checked + .el-checkbox__label) {
+    color: #1f7a52;
   }
 </style>

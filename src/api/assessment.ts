@@ -6,6 +6,8 @@ import type {
   AssessmentExportPayload,
   AssessmentRecordPayload,
   RectificationClosePayload,
+  RectificationUpdatePayload,
+  ReviewGroupConfirmPayload,
   ReviewActionPayload,
   AssessmentReviewLog,
   ManagerTaskPayload,
@@ -97,6 +99,17 @@ export function closeAssessmentRectification(
   })
 }
 
+export function updateAssessmentRectification(
+  id: string | number,
+  params: RectificationUpdatePayload
+) {
+  return request.put<AssessmentBootstrapPayload>({
+    url: `/api/assessment/rectifications/${id}`,
+    params,
+    showSuccessMessage: true
+  })
+}
+
 export function exportAssessmentResult() {
   return request.get<AssessmentExportPayload>({ url: '/api/assessment/export' })
 }
@@ -121,6 +134,18 @@ export function managerConfirmPerformance(userId: number, comment = '负责人�
   return request.post<AssessmentBootstrapPayload>({
     url: `/api/assessment/performance/manager-confirm/${userId}`,
     params: { comment },
+    showSuccessMessage: true
+  })
+}
+
+export function reviewGroupConfirmPerformance(
+  userId: number,
+  params: ReviewGroupConfirmPayload | string = '考核小组复核签字'
+) {
+  const payload = typeof params === 'string' ? { comment: params } : params
+  return request.post<AssessmentBootstrapPayload>({
+    url: `/api/assessment/performance/review-group-confirm/${userId}`,
+    params: payload,
     showSuccessMessage: true
   })
 }

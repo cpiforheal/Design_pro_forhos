@@ -23,6 +23,7 @@ export interface AccountUser {
   position: string
   mobile: string
   elderlyFriendly: boolean
+  medicalRecordStages: string[]
 }
 
 export interface AccountPermission {
@@ -46,7 +47,23 @@ export interface AccountUserListItem {
   position: string
   mobile: string
   elderlyFriendly: boolean
+  medicalRecordStages: string[]
   updatedAt: string
+}
+
+export interface LoginLogItem {
+  id: number
+  userId: number | null
+  username: string
+  displayName: string
+  employeeNo: string
+  roleName: string
+  boardName: string
+  status: 'success' | 'failed'
+  message: string
+  ipAddress: string
+  userAgent: string
+  loggedAt: string
 }
 
 export interface RoleGrantItem {
@@ -82,9 +99,13 @@ export interface CreateAccountPayload {
   position?: string
   mobile?: string
   elderlyFriendly?: boolean
+  medicalRecordStages?: string[]
 }
 
 export interface UpdateAccountProfilePayload {
+  username?: string
+  password?: string
+  roleCode?: string
   displayName?: string
   employeeNo?: string
   email?: string
@@ -93,6 +114,7 @@ export interface UpdateAccountProfilePayload {
   position?: string
   mobile?: string
   elderlyFriendly?: boolean
+  medicalRecordStages?: string[]
 }
 
 export interface SaveAssessmentRecordPayload {
@@ -138,6 +160,16 @@ export interface ReviewActionPayload {
   comment?: string
 }
 
+export interface RectificationUpdatePayload {
+  causeAnalysis?: string
+  supportNeeded?: string
+  rectification?: string
+  deadline?: string
+  responsibleUserId?: number | null
+  supervisorUserId?: number | null
+  status?: '待整改' | '整改中'
+}
+
 export interface ManagerTaskPayload {
   boardId?: string
   title: string
@@ -153,6 +185,16 @@ export interface ManagerTaskPayload {
   assigneeMode?: 'board' | 'users'
   assigneeUserIds?: number[]
 }
+
+export interface ReviewGroupPerformancePayload {
+  comment?: string
+  leaderFinalScore?: number
+  leaderScoreComment?: string
+}
+
+const defaultTaskCategory = '分管负责人任务及临时突击任务'
+const mondayTaskCategory = '周一重点任务及临时突击任务'
+const managerTaskCategory = '分管负责人任务及临时突击任务'
 
 export interface TemplateUpdatePayload {
   title?: string
@@ -180,10 +222,675 @@ export interface CycleStatusPayload {
   status: string
 }
 
+export interface LoginLogPayload {
+  userId?: number | null
+  username: string
+  status: 'success' | 'failed'
+  message: string
+  ipAddress?: string
+  userAgent?: string
+}
+
+export interface StaffingPositionUpdatePayload {
+  level?: string
+  positionName?: string
+  headcount?: number
+  coreOwner?: string
+  reportingLeader?: string
+  concurrentRoles?: string
+  responsibilities?: string
+  directPositions?: string
+  boardId?: string
+  enabled?: boolean
+  sortOrder?: number
+}
+
+export interface MedicalRecordCasePayload {
+  title: string
+  status?: 'draft' | 'submitted' | 'approved'
+  assignedDoctorUserId?: number | null
+  values: Record<string, string | string[]>
+}
+
+export interface MedicalRecordCaseItem {
+  id: number
+  caseNo: string
+  templateKey: string
+  title: string
+  status: 'draft' | 'submitted' | 'approved'
+  assignedDoctorUserId: number | null
+  assignedDoctorName: string
+  values: Record<string, string | string[]>
+  createdBy: number
+  createdByName: string
+  updatedBy: number
+  updatedByName: string
+  createdAt: string
+  updatedAt: string
+}
+
 const dbDir = path.resolve(process.cwd(), 'server/data')
 const dbPath = path.join(dbDir, 'hospital-assessment.sqlite')
 let SQL: SqlJsStatic | null = null
 let db: Database | null = null
+
+const officialAssessmentStandards = {
+  completed: '完成即合格；未完成进入整改闭环，要求台账可查、责任到人、限期销号。',
+  redline: '勾选“是”或填报为未完成时，一次性扣 12 分，全院通报、严肃追责。'
+}
+
+const officialAssessmentItems = [
+  [
+    'common-01',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '工作闭环：任务执行与督办',
+    '事事有跟踪、件件有回音、限时办结、闭环销号、台账可查'
+  ],
+  [
+    'common-02',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '周计划管理：制定、上报、执行',
+    '计划完整：任务 + 分工 + 时限 + 考核 + 培训；按时上报、执行到位'
+  ],
+  [
+    'common-03',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '制度规范：医院制度与流程',
+    '严格遵守、不走样、不违规、无侥幸、无漏洞'
+  ],
+  [
+    'common-04',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '岗位履职：岗位职责与标准',
+    '标准清晰、操作规范、履职到位、不缺位不越位'
+  ],
+  [
+    'common-05',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '培训学习：业务 / 院感 / 医保培训',
+    '按时参训、掌握要点、应知应会、记录完整'
+  ],
+  [
+    'common-06',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '质量安全：院感 / 消防 / 设备 / 隐私',
+    '消杀规范、设备完好、消防在位、患者信息不外泄'
+  ],
+  [
+    'common-07',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '问题整改：上周问题闭环',
+    '台账清晰、整改彻底、复查通过、不再复发'
+  ],
+  [
+    'common-08',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '数据真实：填报与上报',
+    '严禁虚报 / 假报 / 瞒报；数据真实、准确、可追溯'
+  ],
+  [
+    'common-09',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '服务口碑：文明服务与沟通',
+    '态度温和、首问负责、无投诉、维护医院品牌'
+  ],
+  [
+    'common-10',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '作风担当：工作纪律与执行力',
+    '守岗尽责、不推诿、不拖延、令行禁止'
+  ],
+  [
+    'common-11',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '通知闭环：传达与回复',
+    '100% 及时回复、无遗漏、无拖延、全员覆盖'
+  ],
+  [
+    'common-12',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '廉洁行医：医德医风',
+    '不收受红包、不推销、不诱导消费、合规诊疗'
+  ],
+  [
+    'common-13',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '院感底线：手卫生 / 消毒 / 防护',
+    '按规范执行、无交叉感染风险、记录完整'
+  ],
+  [
+    'common-14',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '医保合规：收费 / 指征 / 结算',
+    '无串换、无超标准、无违规、无拒付'
+  ],
+  [
+    'common-15',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '数字化运维：钉钉 / AI 填报',
+    '按时填报、数据准确、自动统计、及时归档'
+  ],
+  [
+    'redline-data-truth',
+    '全员通用',
+    'allStaff',
+    '红线考核（一票否决）',
+    '红线考核：存在虚报、假报、瞒报、数据造假',
+    officialAssessmentStandards.redline,
+    true,
+    0,
+    12,
+    1
+  ],
+  [
+    'medical-01',
+    '板块专项',
+    'medical',
+    '医疗中心专项考核',
+    '医疗核心制度 100% 执行（三级查房、交接班、会诊）'
+  ],
+  [
+    'medical-02',
+    '板块专项',
+    'medical',
+    '医疗中心专项考核',
+    '无痛微创术前评估、麻醉评估、知情同意完善'
+  ],
+  ['medical-03', '板块专项', 'medical', '医疗中心专项考核', '病历书写及时、规范、完整、无丙级病历'],
+  [
+    'medical-04',
+    '板块专项',
+    'medical',
+    '医疗中心专项考核',
+    '中医肛肠内科辨证施治、中药 / 理疗使用规范'
+  ],
+  [
+    'medical-05',
+    '板块专项',
+    'medical',
+    '医疗中心专项考核',
+    '院感防控：换药室 / 手术室 / 肠镜室合规'
+  ],
+  ['medical-06', '板块专项', 'medical', '医疗中心专项考核', 'DIP/DRG 入组准确、诊断规范、无违规'],
+  [
+    'medical-07',
+    '板块专项',
+    'medical',
+    '医疗中心专项考核',
+    '医患沟通充分、疼痛管理到位、满意度提升'
+  ],
+  ['medical-08', '板块专项', 'medical', '医疗中心专项考核', '医疗安全：无差错、无隐患、无不良事件'],
+  ['medical-09', '板块专项', 'medical', '医疗中心专项考核', '麻醉流程规范、监护完整、复苏到位'],
+  ['medical-10', '板块专项', 'medical', '医疗中心专项考核', '医技检查规范、报告及时、结果准确'],
+  ['medical-11', '板块专项', 'medical', '医疗中心专项考核', '药房四查十对、中药饮片 / 熏洗包规范'],
+  [
+    'nursing-01',
+    '板块专项',
+    'nursing',
+    '规范护理与健康管理中心专项考核',
+    '护理查房、交接班、三查七对规范'
+  ],
+  [
+    'nursing-02',
+    '板块专项',
+    'nursing',
+    '规范护理与健康管理中心专项考核',
+    '护理文书完整、准确、可追溯'
+  ],
+  [
+    'nursing-03',
+    '板块专项',
+    'nursing',
+    '规范护理与健康管理中心专项考核',
+    '院感消毒、手卫生、无菌操作 100% 落实'
+  ],
+  [
+    'nursing-04',
+    '板块专项',
+    'nursing',
+    '规范护理与健康管理中心专项考核',
+    '术后护理：疼痛观察、出血观察、引流管理'
+  ],
+  [
+    'nursing-05',
+    '板块专项',
+    'nursing',
+    '规范护理与健康管理中心专项考核',
+    '中医特色：熏洗、理疗、换药、艾灸规范'
+  ],
+  [
+    'nursing-06',
+    '板块专项',
+    'nursing',
+    '规范护理与健康管理中心专项考核',
+    '健康档案一人一档、动态更新、完整闭环'
+  ],
+  [
+    'nursing-07',
+    '板块专项',
+    'nursing',
+    '规范护理与健康管理中心专项考核',
+    '出院回访、康复指导、满意度跟踪'
+  ],
+  [
+    'nursing-08',
+    '板块专项',
+    'nursing',
+    '规范护理与健康管理中心专项考核',
+    '门诊 / 手术室 / 肠镜室护理配合到位'
+  ],
+  [
+    'nursing-09',
+    '板块专项',
+    'nursing',
+    '规范护理与健康管理中心专项考核',
+    '压疮 / 跌倒 / 坠床风险评估与防控'
+  ],
+  [
+    'nursing-10',
+    '板块专项',
+    'nursing',
+    '规范护理与健康管理中心专项考核',
+    '患者诉求及时响应、无投诉'
+  ],
+  [
+    'office-01',
+    '板块专项',
+    'generalOffice',
+    '综合办公室中心专项考核',
+    '上传下达及时准确、通知闭环 100%'
+  ],
+  [
+    'office-02',
+    '板块专项',
+    'generalOffice',
+    '综合办公室中心专项考核',
+    '会议组织、纪要、任务分解、跟踪督办'
+  ],
+  [
+    'office-03',
+    '板块专项',
+    'generalOffice',
+    '综合办公室中心专项考核',
+    '全院考核汇总、绩效对接、公示规范'
+  ],
+  [
+    'office-04',
+    '板块专项',
+    'generalOffice',
+    '综合办公室中心专项考核',
+    '钉钉 + AI 系统运维、数据自动统计'
+  ],
+  [
+    'office-05',
+    '板块专项',
+    'generalOffice',
+    '综合办公室中心专项考核',
+    '跨中心协调、问题解决、不拖延'
+  ],
+  [
+    'office-06',
+    '板块专项',
+    'generalOffice',
+    '综合办公室中心专项考核',
+    '档案资料规范、迎检准备到位'
+  ],
+  [
+    'admin-01',
+    '板块专项',
+    'adminSupport',
+    '行政医政医保后勤中心专项考核',
+    '考勤纪律、在岗状态、作风严谨'
+  ],
+  [
+    'admin-02',
+    '板块专项',
+    'adminSupport',
+    '行政医政医保后勤中心专项考核',
+    '医政监管、核心制度落地、诊疗合规'
+  ],
+  [
+    'admin-03',
+    '板块专项',
+    'adminSupport',
+    '行政医政医保后勤中心专项考核',
+    '医保政策执行、收费规范、无违规扣款'
+  ],
+  [
+    'admin-04',
+    '板块专项',
+    'adminSupport',
+    '行政医政医保后勤中心专项考核',
+    '安保消防、巡查到位、无安全隐患'
+  ],
+  [
+    'admin-05',
+    '板块专项',
+    'adminSupport',
+    '行政医政医保后勤中心专项考核',
+    '保洁消杀、院感环境、无卫生死角'
+  ],
+  [
+    'admin-06',
+    '板块专项',
+    'adminSupport',
+    '行政医政医保后勤中心专项考核',
+    '物资采购、入库、领用、核销可追溯'
+  ],
+  [
+    'admin-07',
+    '板块专项',
+    'adminSupport',
+    '行政医政医保后勤中心专项考核',
+    '水电维修、设备保障、及时高效'
+  ],
+  [
+    'admin-08',
+    '板块专项',
+    'adminSupport',
+    '行政医政医保后勤中心专项考核',
+    '降本增效、无浪费、无漏洞'
+  ],
+  [
+    'brand-01',
+    '板块专项',
+    'brand',
+    '品牌宣传与运营服务外联中心专项考核',
+    '短视频 / 自媒体按时更新、内容合规'
+  ],
+  [
+    'brand-02',
+    '板块专项',
+    'brand',
+    '品牌宣传与运营服务外联中心专项考核',
+    '品牌宣传突出：肛肠专科・无痛微创・中医特色'
+  ],
+  [
+    'brand-03',
+    '板块专项',
+    'brand',
+    '品牌宣传与运营服务外联中心专项考核',
+    '前台导诊首接负责、流程顺畅、登记准确'
+  ],
+  [
+    'brand-04',
+    '板块专项',
+    'brand',
+    '品牌宣传与运营服务外联中心专项考核',
+    '服务礼仪规范、语言文明、患者体验好'
+  ],
+  [
+    'brand-05',
+    '板块专项',
+    'brand',
+    '品牌宣传与运营服务外联中心专项考核',
+    '外联拓渠、乡镇合作、转诊体系推进'
+  ],
+  [
+    'brand-06',
+    '板块专项',
+    'brand',
+    '品牌宣传与运营服务外联中心专项考核',
+    '转介绍维护、口碑提升、患者留存'
+  ],
+  [
+    'brand-07',
+    '板块专项',
+    'brand',
+    '品牌宣传与运营服务外联中心专项考核',
+    '义诊、地推、公益活动按计划执行'
+  ],
+  [
+    'finance-01',
+    '板块专项',
+    'financeHr',
+    '财务与人力资源中心专项考核',
+    '收费准确、票据规范、日清月结'
+  ],
+  [
+    'finance-02',
+    '板块专项',
+    'financeHr',
+    '财务与人力资源中心专项考核',
+    '账务真实、账实相符、报表及时'
+  ],
+  [
+    'finance-03',
+    '板块专项',
+    'financeHr',
+    '财务与人力资源中心专项考核',
+    '考核分数汇总、自动统计、存档完整'
+  ],
+  [
+    'finance-04',
+    '板块专项',
+    'financeHr',
+    '财务与人力资源中心专项考核',
+    '薪资核算准确、绩效发放及时'
+  ],
+  [
+    'finance-05',
+    '板块专项',
+    'financeHr',
+    '财务与人力资源中心专项考核',
+    '成本管控、耗材分析、数据支撑运营'
+  ],
+  [
+    'finance-06',
+    '板块专项',
+    'financeHr',
+    '财务与人力资源中心专项考核',
+    '人力排班、考勤合规、人员统筹'
+  ],
+  [
+    'finance-07',
+    '板块专项',
+    'financeHr',
+    '财务与人力资源中心专项考核',
+    '医保结算、对账、资料完整迎检'
+  ]
+] as const
+
+const officialStaffingPositions = [
+  [
+    'staffing-01',
+    '一级决策层（最高指挥）',
+    '法人',
+    1,
+    '医院最高决策',
+    '',
+    '法定代表人 / 制度总负责人',
+    '制度建设、日常管理、绩效考核、周二考核统筹、全院督办、合规底线',
+    '六大中心负责人',
+    'generalOffice'
+  ],
+  [
+    'staffing-02',
+    '一级决策层（最高指挥）',
+    '院长',
+    1,
+    '医疗技术总负责',
+    '',
+    '医疗首席专家 / 学科带头人',
+    '医疗质量、医疗安全、诊疗规范、无痛微创、中医肛肠特色、医护管理',
+    '医疗中心、护理健康管理中心',
+    'medical'
+  ],
+  [
+    'staffing-03',
+    '一级决策层（最高指挥）',
+    '常务院长',
+    1,
+    '运营发展总负责',
+    '',
+    '运营总负责人 / 品牌总监',
+    '运营拓客、品牌宣传、服务升级、渠道外联、成本管控、业务增长',
+    '品牌运营服务中心',
+    'brand'
+  ],
+  [
+    'staffing-04',
+    '二级执行层（六大中心・直管一线）',
+    '医疗中心',
+    1,
+    '医疗技术管理',
+    '院长',
+    '肛肠科主任 / 医务院感质控负责人',
+    '医疗核心制度、三级查房、病历质控、院感防控、麻醉安全、DIP/DRG 规范、无痛微创落地',
+    '肛肠专科医师、中医肛肠内科医师、麻醉医师、综合医技、中西药房',
+    'medical'
+  ],
+  [
+    'staffing-05',
+    '二级执行层（六大中心・直管一线）',
+    '规范护理与健康管理中心',
+    1,
+    '护理康复管理',
+    '院长',
+    '总护士长 / 中医康复中心主任',
+    '护理规范、院感消毒、中医熏洗 / 理疗 / 换药、健康档案、出院回访、全周期管理',
+    '住院护士、门诊 / 手术室护士、中医治疗专科护士、健康管理回访',
+    'nursing'
+  ],
+  [
+    'staffing-06',
+    '二级执行层（六大中心・直管一线）',
+    '综合办公室',
+    1,
+    '全院中枢指挥',
+    '法人',
+    '院办主任 / 会议督办 / 钉钉运维',
+    '上传下达、任务督办、考核汇总、档案管理、跨中心协调、数字化运维',
+    '全院统筹调度、督办、资料、考核对接',
+    'generalOffice'
+  ],
+  [
+    'staffing-07',
+    '二级执行层（六大中心・直管一线）',
+    '行政医政医保后勤中心',
+    1,
+    '合规保障管理',
+    '法人',
+    '医政医保主任 / 后勤安全主管',
+    '人事考勤、医政监管、医保合规、后勤物资、安保保洁、水电维修、物资追溯',
+    '安保、保洁、后勤物资兼维修内勤',
+    'adminSupport'
+  ],
+  [
+    'staffing-08',
+    '二级执行层（六大中心・直管一线）',
+    '品牌宣传与运营服务外联中心',
+    1,
+    '品牌拓客管理',
+    '常务院长',
+    '运营总监 / 品牌负责人',
+    '短视频宣传、自媒体运营、前台服务、外联拓渠、转介绍、口碑建设',
+    '前台导诊、短视频宣传专员、外联渠道拓展专员',
+    'brand'
+  ],
+  [
+    'staffing-09',
+    '二级执行层（六大中心・直管一线）',
+    '财务与人力资源中心',
+    1,
+    '财务人力管理',
+    '法人 / 常务院长',
+    '财务主管 / 人事绩效主管',
+    '财务核算、收费管理、成本管控、绩效汇总、考勤排班、经营数据分析',
+    '收费员、会计',
+    'financeHr'
+  ],
+  [
+    'staffing-10',
+    '三级一线岗（刚需执行）',
+    '医疗中心一线',
+    0,
+    '医疗技术执行',
+    '医疗中心负责人',
+    '',
+    '肛肠诊疗、无痛微创、中医内科、麻醉、检查检验、药房调剂',
+    '肛肠专科医师、中医肛肠内科医师、麻醉医师、综合医技、中西药房',
+    'medical'
+  ],
+  [
+    'staffing-11',
+    '三级一线岗（刚需执行）',
+    '护理健康中心一线',
+    0,
+    '护理康复执行',
+    '护理健康管理中心负责人',
+    '',
+    '护理操作、院感、中医康复、健康档案、回访、患者服务',
+    '住院护士、门诊 / 手术室护士、中医治疗专科护士、健康管理回访',
+    'nursing'
+  ],
+  [
+    'staffing-12',
+    '三级一线岗（刚需执行）',
+    '行政后勤一线',
+    0,
+    '保障服务执行',
+    '行政医政医保后勤负责人',
+    '',
+    '安保、保洁、维修、物资采购领用、环境安全、院感配套',
+    '安保岗、保洁岗、后勤物资兼维修内勤',
+    'adminSupport'
+  ],
+  [
+    'staffing-13',
+    '三级一线岗（刚需执行）',
+    '品牌运营一线',
+    0,
+    '宣传拓客执行',
+    '品牌运营服务中心负责人',
+    '',
+    '接待导诊、宣传运营、渠道拓展、转诊维护、患者体验',
+    '前台导诊、短视频宣传专员、外联渠道拓展专员',
+    'brand'
+  ],
+  [
+    'staffing-14',
+    '三级一线岗（刚需执行）',
+    '财务人力一线',
+    0,
+    '财务数据执行',
+    '财务与人力资源负责人',
+    '',
+    '收费核算、账务处理、绩效统计、考勤排班、经营数据存档',
+    '收费员、会计',
+    'financeHr'
+  ]
+] as const
 
 export async function getDatabase(): Promise<Database> {
   if (db) return db
@@ -239,6 +946,7 @@ export async function listAccountUsers(): Promise<AccountUserListItem[]> {
     position: String(row.position || ''),
     mobile: String(row.mobile || ''),
     elderlyFriendly: Number(row.elderly_friendly || 0) === 1,
+    medicalRecordStages: parseJsonList(row.medical_record_stages),
     updatedAt: String(row.updated_at || '')
   }))
 }
@@ -251,8 +959,8 @@ export async function createAccountUser(payload: CreateAccountPayload): Promise<
   runPrepared(
     database,
     `
-    INSERT INTO users (username, password_hash, display_name, employee_no, email, status, board_id, position, mobile, elderly_friendly)
-    VALUES ($username, $passwordHash, $displayName, $employeeNo, $email, 'active', $boardId, $position, $mobile, $elderlyFriendly)
+    INSERT INTO users (username, password_hash, display_name, employee_no, email, status, board_id, position, mobile, elderly_friendly, medical_record_stages)
+    VALUES ($username, $passwordHash, $displayName, $employeeNo, $email, 'active', $boardId, $position, $mobile, $elderlyFriendly, $medicalRecordStages)
   `,
     {
       $username: payload.username,
@@ -263,7 +971,8 @@ export async function createAccountUser(payload: CreateAccountPayload): Promise<
       $boardId: payload.boardId || 'medical',
       $position: payload.position || '',
       $mobile: payload.mobile || '',
-      $elderlyFriendly: payload.elderlyFriendly === false ? 0 : 1
+      $elderlyFriendly: payload.elderlyFriendly === false ? 0 : 1,
+      $medicalRecordStages: stringifyMedicalRecordStages(payload.medicalRecordStages)
     }
   )
   runPrepared(
@@ -296,18 +1005,33 @@ export async function updateAccountUserProfile(
 ): Promise<void> {
   const user = await findUserById(userId)
   if (!user) throw new Error('员工账号不存在')
+  const username = (payload.username ?? user.username).trim()
+  if (!username) throw new Error('登录账号不能为空')
+  const duplicate = (
+    await queryRows('SELECT id FROM users WHERE username = $username AND id != $userId LIMIT 1', {
+      $username: username,
+      $userId: userId
+    })
+  )[0]
+  if (duplicate) throw new Error('登录账号已存在')
   const boardId = payload.boardId ?? user.boardId
   await ensureAssignableBoard(boardId)
+  if (payload.roleCode) await ensureRoleAssignable(payload.roleCode)
   const status = payload.status ?? user.status
   if (!['active', 'disabled'].includes(status)) throw new Error('账号状态不正确')
   const displayName = (payload.displayName ?? user.displayName).trim()
   const employeeNo = (payload.employeeNo ?? user.employeeNo).trim()
   const email = (payload.email ?? user.email).trim()
   if (!displayName || !employeeNo || !email) throw new Error('姓名、工号和邮箱不能为空')
+  const nextPassword = payload.password?.trim() || ''
+  if (nextPassword && nextPassword.length < 6) throw new Error('新密码至少 6 位')
+  const passwordHash = nextPassword ? await bcrypt.hash(nextPassword, 10) : null
   await runSql(
     `
     UPDATE users
-    SET display_name = $displayName,
+    SET username = $username,
+        password_hash = COALESCE($passwordHash, password_hash),
+        display_name = $displayName,
         employee_no = $employeeNo,
         email = $email,
         status = $status,
@@ -315,11 +1039,14 @@ export async function updateAccountUserProfile(
         position = $position,
         mobile = $mobile,
         elderly_friendly = $elderlyFriendly,
+        medical_record_stages = $medicalRecordStages,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = $userId
   `,
     {
       $userId: userId,
+      $username: username,
+      $passwordHash: passwordHash,
       $displayName: displayName,
       $employeeNo: employeeNo,
       $email: email,
@@ -327,10 +1054,76 @@ export async function updateAccountUserProfile(
       $boardId: boardId,
       $position: (payload.position ?? user.position).trim(),
       $mobile: (payload.mobile ?? user.mobile).trim(),
-      $elderlyFriendly: (payload.elderlyFriendly ?? user.elderlyFriendly) ? 1 : 0
+      $elderlyFriendly: (payload.elderlyFriendly ?? user.elderlyFriendly) ? 1 : 0,
+      $medicalRecordStages: stringifyMedicalRecordStages(
+        payload.medicalRecordStages ?? user.medicalRecordStages
+      )
+    }
+  )
+  if (payload.roleCode) await updateAccountUserRole(userId, payload.roleCode)
+  persistDatabase()
+}
+
+export async function resetAccountUserPassword(userId: number, password: string): Promise<void> {
+  const user = await findUserById(userId)
+  if (!user) throw new Error('员工账号不存在')
+  const nextPassword = password.trim()
+  if (nextPassword.length < 6) throw new Error('新密码至少 6 位')
+  const passwordHash = await bcrypt.hash(nextPassword, 10)
+  await runSql(
+    `UPDATE users SET password_hash = $passwordHash, updated_at = CURRENT_TIMESTAMP WHERE id = $userId`,
+    { $userId: userId, $passwordHash: passwordHash }
+  )
+  persistDatabase()
+}
+
+export async function recordLoginLog(payload: LoginLogPayload): Promise<void> {
+  await runSql(
+    `
+    INSERT INTO login_logs (user_id, username, status, message, ip_address, user_agent)
+    VALUES ($userId, $username, $status, $message, $ipAddress, $userAgent)
+  `,
+    {
+      $userId: payload.userId ?? null,
+      $username: payload.username,
+      $status: payload.status,
+      $message: payload.message,
+      $ipAddress: payload.ipAddress || '',
+      $userAgent: payload.userAgent || ''
     }
   )
   persistDatabase()
+}
+
+export async function listLoginLogs(limit = 200): Promise<LoginLogItem[]> {
+  const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 1000)
+  const rows = await queryRows(
+    `
+    SELECT ll.*, u.display_name, u.employee_no, r.name AS role_name, b.name AS board_name
+    FROM login_logs ll
+    LEFT JOIN users u ON u.id = ll.user_id
+    LEFT JOIN user_roles ur ON ur.user_id = u.id
+    LEFT JOIN roles r ON r.id = ur.role_id
+    LEFT JOIN boards b ON b.id = u.board_id
+    ORDER BY ll.logged_at DESC, ll.id DESC
+    LIMIT $limit
+  `,
+    { $limit: safeLimit }
+  )
+  return rows.map((row) => ({
+    id: Number(row.id),
+    userId: row.user_id == null ? null : Number(row.user_id),
+    username: String(row.username || ''),
+    displayName: String(row.display_name || ''),
+    employeeNo: String(row.employee_no || ''),
+    roleName: String(row.role_name || ''),
+    boardName: String(row.board_name || ''),
+    status: String(row.status) === 'success' ? 'success' : 'failed',
+    message: String(row.message || ''),
+    ipAddress: String(row.ip_address || ''),
+    userAgent: String(row.user_agent || ''),
+    loggedAt: String(row.logged_at || '')
+  }))
 }
 
 export async function listRoleGrants(): Promise<RoleGrantItem[]> {
@@ -451,6 +1244,9 @@ export async function getAssessmentBootstrap(userId: number) {
     currentCycle
   })
   const myTodoSummary = buildMyTodoSummary(myAssessmentGroups)
+  const taskSummaryRecords = Object.fromEntries(
+    tasks.map((task) => [task.id, taskRecords[task.id] ?? { status: 'pending' }])
+  )
 
   return {
     user: mapEmployee(actor.user, actor.permissions.roleCode),
@@ -476,7 +1272,7 @@ export async function getAssessmentBootstrap(userId: number) {
     myAssessmentGroups,
     summary: calculateSummary([...assessmentItems, ...tasks], {
       ...assessmentRecords,
-      ...taskRecords
+      ...taskSummaryRecords
     })
   }
 }
@@ -838,8 +1634,21 @@ export async function reviewRecord(
   )
   if (workflowStatus === 'rectifying') {
     await runSql(
-      `UPDATE rectifications SET status = '整改中', review_comment = $comment, updated_at = CURRENT_TIMESTAMP WHERE source_type = $recordType AND source_record_id = $recordId`,
-      { $recordType: recordType, $recordId: recordId, $comment: comment }
+      `
+      UPDATE rectifications
+      SET status = '整改中',
+          cause_analysis = COALESCE(NULLIF(cause_analysis, ''), $comment),
+          review_comment = $comment,
+          supervisor_user_id = $supervisorUserId,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE source_type = $recordType AND source_record_id = $recordId
+    `,
+      {
+        $recordType: recordType,
+        $recordId: recordId,
+        $comment: comment,
+        $supervisorUserId: actor.user.id
+      }
     )
   }
   persistDatabase()
@@ -860,8 +1669,17 @@ export async function closeRectification(
   await ensureCycleIsWritable(String(rectification.cycle_id))
   ensureCanReviewBoard(actor, String(rectification.board_id))
   await runSql(
-    `UPDATE rectifications SET status = '已销号', closed_by = $closedBy, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $id`,
-    { $closedBy: actor.user.id, $id: rectificationId }
+    `
+    UPDATE rectifications
+    SET status = '已销号',
+        review_comment = $comment,
+        closed_by = $closedBy,
+        closed_at = CURRENT_TIMESTAMP,
+        review_passed_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $id
+  `,
+    { $closedBy: actor.user.id, $comment: comment, $id: rectificationId }
   )
   if (String(rectification.source_type) === 'assessment') {
     await runSql(
@@ -888,6 +1706,67 @@ export async function closeRectification(
   return getAssessmentBootstrap(userId)
 }
 
+export async function updateRectification(
+  userId: number,
+  rectificationId: number,
+  payload: RectificationUpdatePayload
+) {
+  const actor = await requireActor(userId)
+  const rectification = (
+    await queryRows('SELECT * FROM rectifications WHERE id = $id LIMIT 1', { $id: rectificationId })
+  )[0]
+  if (!rectification) throw new Error('整改记录不存在')
+  await ensureCycleIsWritable(String(rectification.cycle_id))
+  ensureCanReviewBoard(actor, String(rectification.board_id))
+  if (String(rectification.status) === '已销号') throw new Error('整改已销号，不能继续修改')
+  const nextStatus =
+    payload.status === '整改中' || payload.status === '待整改'
+      ? payload.status
+      : String(rectification.status || '待整改')
+  await runSql(
+    `
+    UPDATE rectifications
+    SET cause_analysis = $causeAnalysis,
+        support_needed = $supportNeeded,
+        rectification = $rectification,
+        responsible_user_id = $responsibleUserId,
+        supervisor_user_id = $supervisorUserId,
+        deadline = $deadline,
+        status = $status,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $id
+  `,
+    {
+      $id: rectificationId,
+      $causeAnalysis: payload.causeAnalysis ?? String(rectification.cause_analysis || ''),
+      $supportNeeded: payload.supportNeeded ?? String(rectification.support_needed || ''),
+      $rectification: payload.rectification ?? String(rectification.rectification || ''),
+      $responsibleUserId:
+        payload.responsibleUserId === null
+          ? null
+          : (payload.responsibleUserId ??
+            Number(rectification.responsible_user_id || rectification.owner_user_id)),
+      $supervisorUserId:
+        payload.supervisorUserId === null
+          ? null
+          : (payload.supervisorUserId ?? Number(rectification.supervisor_user_id || actor.user.id)),
+      $deadline: payload.deadline ?? String(rectification.deadline || ''),
+      $status: nextStatus
+    }
+  )
+  await insertReviewLog(
+    String(rectification.cycle_id),
+    'rectification',
+    rectificationId,
+    Number(rectification.owner_user_id),
+    actor.user.id,
+    'updated',
+    '整改闭环信息已更新'
+  )
+  persistDatabase()
+  return getAssessmentBootstrap(userId)
+}
+
 export async function getAssessmentExport(userId: number) {
   const payload = await getAssessmentBootstrap(userId)
   return {
@@ -895,7 +1774,7 @@ export async function getAssessmentExport(userId: number) {
     hospitalName: '固始中医肛肠医院',
     title: '每周二全院基本工作综合考核清单',
     ...payload,
-    signatureRows: ['员工签字', '分管负责人签字', '综合办公室确认', '院领导确认']
+    signatureRows: ['本人签字', '分管负责人签字', '考核小组复核签字']
   }
 }
 
@@ -925,7 +1804,7 @@ export async function createManagedBoardTask(userId: number, payload: ManagerTas
       $title: payload.title.trim(),
       $deadline: payload.deadline,
       $deadlineAt: normalizeDateTime(payload.deadlineAt || payload.deadline),
-      $taskCategory: payload.taskCategory || '分管负责人任务',
+      $taskCategory: normalizeTaskCategory(payload.taskCategory),
       $deployerUserId: payload.deployerUserId || actor.user.id,
       $acceptorUserId: payload.acceptorUserId || null,
       $acceptanceStatus: payload.acceptanceStatus || '待验收',
@@ -976,7 +1855,9 @@ export async function updateManagedBoardTask(
       $title: payload.title.trim(),
       $deadline: payload.deadline,
       $deadlineAt: normalizeDateTime(payload.deadlineAt || payload.deadline),
-      $taskCategory: payload.taskCategory || String(current.task_category || '分管负责人任务'),
+      $taskCategory: normalizeTaskCategory(
+        payload.taskCategory || String(current.task_category || '')
+      ),
       $deployerUserId: payload.deployerUserId || Number(current.deployer_user_id || actor.user.id),
       $acceptorUserId: payload.acceptorUserId || Number(current.acceptor_user_id || 0) || null,
       $acceptanceStatus: payload.acceptanceStatus || String(current.acceptance_status || '待验收'),
@@ -1190,6 +2071,61 @@ export async function managerConfirmPerformance(
   return getAssessmentBootstrap(userId)
 }
 
+export async function reviewGroupConfirmPerformance(
+  userId: number,
+  targetUserId: number,
+  payload: ReviewGroupPerformancePayload | string = '考核小组复核签字'
+) {
+  const actor = await requireActor(userId)
+  if (!['R_SUPER', 'R_LEADER'].includes(actor.permissions.roleCode))
+    throw new Error('仅院领导或超级管理员可进行考核小组复核')
+  const cycle = await getCurrentCycle()
+  if (cycle.status === 'archived') throw new Error('当前周期已归档，不能重复确认')
+  const target = await findUserById(targetUserId)
+  if (!target) throw new Error('员工不存在')
+  ensureCanReviewBoard(actor, target.boardId)
+  const options = typeof payload === 'string' ? { comment: payload } : payload
+  const leaderFinalScore =
+    options.leaderFinalScore === undefined || options.leaderFinalScore === null
+      ? undefined
+      : Number(options.leaderFinalScore)
+  if (leaderFinalScore !== undefined && !Number.isFinite(leaderFinalScore)) {
+    throw new Error('院长确认分必须是有效数字')
+  }
+  const targetRoleCode = await getUserPrimaryRoleCode(target.id)
+  if (leaderFinalScore !== undefined && targetRoleCode !== 'R_MANAGER') {
+    throw new Error('院长确认分仅用于板块负责人')
+  }
+  await ensurePerformanceResultForUser(cycle, target)
+  await upsertPerformanceConfirmation(
+    cycle.id,
+    target.id,
+    'reviewGroup',
+    actor.user.id,
+    options.comment || '考核小组复核签字'
+  )
+  if (leaderFinalScore !== undefined) {
+    await updateLeaderScore(
+      cycle.id,
+      target.id,
+      actor.user.id,
+      leaderFinalScore,
+      options.leaderScoreComment || options.comment || ''
+    )
+  }
+  await insertReviewLog(
+    cycle.id,
+    'performance',
+    target.id,
+    target.id,
+    actor.user.id,
+    'reviewGroupConfirmed',
+    options.comment || '考核小组复核签字'
+  )
+  persistDatabase()
+  return getAssessmentBootstrap(userId)
+}
+
 export async function listBoardResponsibilityConfig(userId: number) {
   const actor = await requireActor(userId)
   if (actor.permissions.roleCode !== 'R_SUPER') throw new Error('仅超级管理员可维护组织责任配置')
@@ -1225,6 +2161,200 @@ export async function updateBoardResponsibilityConfig(
   persistDatabase()
   return getBoardResponsibilityConfig()
 }
+
+export async function listStaffingPositions(userId: number) {
+  const actor = await requireActor(userId)
+  if (actor.permissions.roleCode !== 'R_SUPER') throw new Error('仅超级管理员可维护定编定岗')
+  const rows = await queryRows(`
+    SELECT sp.*, b.name AS board_name
+    FROM staffing_positions sp
+    LEFT JOIN boards b ON b.id = sp.board_id
+    ORDER BY sp.sort_order ASC, sp.id ASC
+  `)
+  return rows.map(mapStaffingPosition)
+}
+
+export async function updateStaffingPosition(
+  userId: number,
+  positionId: string,
+  payload: StaffingPositionUpdatePayload
+) {
+  const actor = await requireActor(userId)
+  if (actor.permissions.roleCode !== 'R_SUPER') throw new Error('仅超级管理员可维护定编定岗')
+  const current = (
+    await queryRows('SELECT * FROM staffing_positions WHERE id = $id LIMIT 1', {
+      $id: positionId
+    })
+  )[0]
+  if (!current) throw new Error('定编定岗记录不存在')
+  await runSql(
+    `
+    UPDATE staffing_positions
+    SET level = $level,
+        position_name = $positionName,
+        headcount = $headcount,
+        core_owner = $coreOwner,
+        reporting_leader = $reportingLeader,
+        concurrent_roles = $concurrentRoles,
+        responsibilities = $responsibilities,
+        direct_positions = $directPositions,
+        board_id = $boardId,
+        enabled = $enabled,
+        sort_order = $sortOrder,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $id
+  `,
+    {
+      $id: positionId,
+      $level: payload.level ?? String(current.level),
+      $positionName: payload.positionName ?? String(current.position_name),
+      $headcount: payload.headcount ?? Number(current.headcount || 0),
+      $coreOwner: payload.coreOwner ?? String(current.core_owner || ''),
+      $reportingLeader: payload.reportingLeader ?? String(current.reporting_leader || ''),
+      $concurrentRoles: payload.concurrentRoles ?? String(current.concurrent_roles || ''),
+      $responsibilities: payload.responsibilities ?? String(current.responsibilities || ''),
+      $directPositions: payload.directPositions ?? String(current.direct_positions || ''),
+      $boardId: payload.boardId ?? String(current.board_id || ''),
+      $enabled:
+        payload.enabled === undefined ? Number(current.enabled || 0) : payload.enabled ? 1 : 0,
+      $sortOrder: payload.sortOrder ?? Number(current.sort_order || 0)
+    }
+  )
+  persistDatabase()
+  return listStaffingPositions(userId)
+}
+
+export async function listMedicalRecordCases(userId: number): Promise<MedicalRecordCaseItem[]> {
+  await requireActor(userId)
+  const rows = await queryRows(`
+    SELECT mrc.*,
+           creator.display_name AS created_by_name,
+           updater.display_name AS updated_by_name,
+           assigned_doctor.display_name AS assigned_doctor_name
+    FROM medical_record_cases mrc
+    LEFT JOIN users creator ON creator.id = mrc.created_by
+    LEFT JOIN users updater ON updater.id = mrc.updated_by
+    LEFT JOIN users assigned_doctor ON assigned_doctor.id = mrc.assigned_doctor_user_id
+    ORDER BY mrc.updated_at DESC, mrc.id DESC
+  `)
+  return rows.map(mapMedicalRecordCase)
+}
+
+export async function listMedicalRecordDoctors(userId: number) {
+  const actor = await requireActor(userId)
+  if (actor.permissions.roleCode !== 'R_SUPER') throw new Error('仅超级管理员可指定病历医师')
+  const rows = await queryRows(`
+    SELECT id, display_name, position, board_id
+    FROM users
+    WHERE status = 'active'
+      AND medical_record_stages LIKE '%"doctor"%'
+    ORDER BY display_name ASC, id ASC
+  `)
+  return rows.map((row) => ({
+    id: Number(row.id),
+    name: String(row.display_name || ''),
+    position: String(row.position || ''),
+    boardId: String(row.board_id || '')
+  }))
+}
+
+export async function createMedicalRecordCase(
+  userId: number,
+  payload: MedicalRecordCasePayload
+): Promise<MedicalRecordCaseItem> {
+  const actor = await requireActor(userId)
+  validateMedicalRecordPayload(payload)
+  const assignedDoctorUserId = await resolveAssignedDoctorUserId(
+    actor,
+    payload.assignedDoctorUserId
+  )
+  const caseNo = await createMedicalRecordCaseNo()
+  await runSql(
+    `
+    INSERT INTO medical_record_cases
+      (case_no, template_key, title, status, assigned_doctor_user_id, values_json, created_by, updated_by, updated_at)
+    VALUES
+      ($caseNo, 'mixed_hemorrhoid_ligation', $title, $status, $assignedDoctorUserId, $valuesJson, $createdBy, $updatedBy, CURRENT_TIMESTAMP)
+  `,
+    {
+      $caseNo: caseNo,
+      $title: payload.title.trim(),
+      $status: payload.status || 'draft',
+      $assignedDoctorUserId: assignedDoctorUserId,
+      $valuesJson: JSON.stringify(payload.values || {}),
+      $createdBy: userId,
+      $updatedBy: userId
+    }
+  )
+  persistDatabase()
+  return getMedicalRecordCaseByNo(userId, caseNo)
+}
+
+export async function updateMedicalRecordCase(
+  userId: number,
+  id: number,
+  payload: MedicalRecordCasePayload
+): Promise<MedicalRecordCaseItem> {
+  const actor = await requireActor(userId)
+  if (!id) throw new Error('请选择要保存的病历')
+  validateMedicalRecordPayload(payload)
+  const current = (
+    await queryRows('SELECT * FROM medical_record_cases WHERE id = $id LIMIT 1', { $id: id })
+  )[0]
+  if (!current) throw new Error('病历不存在')
+  const nextStatus = payload.status || normalizeMedicalRecordStatus(current.status)
+  const assignedDoctorUserId = await resolveMedicalRecordAssignment(actor, current, payload)
+  ensureMedicalRecordStatusChangeAllowed(actor, current, nextStatus, assignedDoctorUserId)
+  await runSql(
+    `
+    UPDATE medical_record_cases
+    SET title = $title,
+        status = $status,
+        assigned_doctor_user_id = $assignedDoctorUserId,
+        values_json = $valuesJson,
+        updated_by = $updatedBy,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $id
+  `,
+    {
+      $id: id,
+      $title: payload.title.trim(),
+      $status: nextStatus,
+      $assignedDoctorUserId: assignedDoctorUserId,
+      $valuesJson: JSON.stringify(payload.values || {}),
+      $updatedBy: userId
+    }
+  )
+  persistDatabase()
+  return getMedicalRecordCase(userId, id)
+}
+
+export async function getMedicalRecordCase(
+  userId: number,
+  id: number
+): Promise<MedicalRecordCaseItem> {
+  await requireActor(userId)
+  const row = (
+    await queryRows(
+      `
+      SELECT mrc.*,
+             creator.display_name AS created_by_name,
+             updater.display_name AS updated_by_name,
+             assigned_doctor.display_name AS assigned_doctor_name
+      FROM medical_record_cases mrc
+      LEFT JOIN users creator ON creator.id = mrc.created_by
+      LEFT JOIN users updater ON updater.id = mrc.updated_by
+      LEFT JOIN users assigned_doctor ON assigned_doctor.id = mrc.assigned_doctor_user_id
+      WHERE mrc.id = $id
+      LIMIT 1
+    `,
+      { $id: id }
+    )
+  )[0]
+  if (!row) throw new Error('病历不存在')
+  return mapMedicalRecordCase(row)
+}
+
 async function migrateAndSeed(database: Database): Promise<void> {
   database.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -1300,7 +2430,7 @@ async function migrateAndSeed(database: Database): Promise<void> {
       title TEXT NOT NULL,
       deadline TEXT NOT NULL,
       deadline_at TEXT,
-      task_category TEXT NOT NULL DEFAULT '分管负责人任务',
+      task_category TEXT NOT NULL DEFAULT '分管负责人任务及临时突击任务',
       deployer_user_id INTEGER,
       acceptor_user_id INTEGER,
       acceptance_status TEXT NOT NULL DEFAULT '待验收',
@@ -1358,19 +2488,37 @@ async function migrateAndSeed(database: Database): Promise<void> {
       uploaded_by INTEGER NOT NULL,
       uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS medical_record_cases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      case_no TEXT NOT NULL UNIQUE,
+      template_key TEXT NOT NULL DEFAULT 'mixed_hemorrhoid_ligation',
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      assigned_doctor_user_id INTEGER,
+      values_json TEXT NOT NULL DEFAULT '{}',
+      created_by INTEGER NOT NULL,
+      updated_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS rectifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       cycle_id TEXT NOT NULL,
       source_type TEXT NOT NULL,
       source_record_id INTEGER NOT NULL,
       board_id TEXT NOT NULL,
+      cause_analysis TEXT NOT NULL DEFAULT '',
+      support_needed TEXT NOT NULL DEFAULT '',
       owner_user_id INTEGER NOT NULL,
+      responsible_user_id INTEGER,
+      supervisor_user_id INTEGER,
       description TEXT NOT NULL,
       rectification TEXT NOT NULL,
       deadline TEXT NOT NULL DEFAULT '',
       review_comment TEXT NOT NULL DEFAULT '',
       evidence_text TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT '待整改',
+      review_passed_at TEXT,
       closed_by INTEGER,
       closed_at TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1396,11 +2544,17 @@ async function migrateAndSeed(database: Database): Promise<void> {
       daily_score REAL NOT NULL DEFAULT 0,
       redline_penalty REAL NOT NULL DEFAULT 0,
       final_score REAL NOT NULL DEFAULT 0,
+      leader_final_score REAL,
+      leader_score_comment TEXT NOT NULL DEFAULT '',
+      leader_score_confirmed_at TEXT,
+      leader_score_user_id INTEGER,
       unfinished_count INTEGER NOT NULL DEFAULT 0,
       rectification_count INTEGER NOT NULL DEFAULT 0,
       overdue_count INTEGER NOT NULL DEFAULT 0,
       archived_status TEXT NOT NULL DEFAULT 'draft',
       employee_confirmed_at TEXT,
+      review_group_confirmed_at TEXT,
+      review_group_user_id INTEGER,
       manager_confirmed_at TEXT,
       manager_user_id INTEGER,
       generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1411,18 +2565,44 @@ async function migrateAndSeed(database: Database): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       cycle_id TEXT NOT NULL,
       user_id INTEGER NOT NULL,
-      role TEXT NOT NULL,
-      confirmer_user_id INTEGER NOT NULL,
-      comment TEXT NOT NULL DEFAULT '',
-      confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(cycle_id, user_id, role)
+	      role TEXT NOT NULL,
+	      confirmer_user_id INTEGER NOT NULL,
+	      comment TEXT NOT NULL DEFAULT '',
+	      confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	      UNIQUE(cycle_id, user_id, role)
+	    );
+	    CREATE TABLE IF NOT EXISTS login_logs (
+	      id INTEGER PRIMARY KEY AUTOINCREMENT,
+	      user_id INTEGER,
+      username TEXT NOT NULL,
+      status TEXT NOT NULL,
+      message TEXT NOT NULL DEFAULT '',
+      ip_address TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      logged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-  `)
+    CREATE TABLE IF NOT EXISTS staffing_positions (
+      id TEXT PRIMARY KEY,
+      level TEXT NOT NULL,
+      position_name TEXT NOT NULL,
+      headcount INTEGER NOT NULL DEFAULT 1,
+      core_owner TEXT NOT NULL DEFAULT '',
+      reporting_leader TEXT NOT NULL DEFAULT '',
+      concurrent_roles TEXT NOT NULL DEFAULT '',
+      responsibilities TEXT NOT NULL DEFAULT '',
+      direct_positions TEXT NOT NULL DEFAULT '',
+      board_id TEXT NOT NULL DEFAULT '',
+	      sort_order INTEGER NOT NULL DEFAULT 0,
+	      enabled INTEGER NOT NULL DEFAULT 1,
+	      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+	    );
+	  `)
 
   ensureColumn(database, 'users', 'board_id', "TEXT NOT NULL DEFAULT 'medical'")
   ensureColumn(database, 'users', 'position', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(database, 'users', 'mobile', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(database, 'users', 'elderly_friendly', 'INTEGER NOT NULL DEFAULT 1')
+  ensureColumn(database, 'users', 'medical_record_stages', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn(database, 'users', 'updated_at', 'TEXT')
   ensureColumn(database, 'roles', 'enabled', 'INTEGER NOT NULL DEFAULT 1')
   ensureColumn(database, 'roles', 'created_at', 'TEXT')
@@ -1435,7 +2615,12 @@ async function migrateAndSeed(database: Database): Promise<void> {
   ensureColumn(database, 'assessment_items', 'deduct_score', 'REAL NOT NULL DEFAULT 1')
   ensureColumn(database, 'assessment_items', 'require_evidence', 'INTEGER NOT NULL DEFAULT 0')
   ensureColumn(database, 'tasks', 'deadline_at', 'TEXT')
-  ensureColumn(database, 'tasks', 'task_category', "TEXT NOT NULL DEFAULT '分管负责人任务'")
+  ensureColumn(
+    database,
+    'tasks',
+    'task_category',
+    "TEXT NOT NULL DEFAULT '分管负责人任务及临时突击任务'"
+  )
   ensureColumn(database, 'tasks', 'deployer_user_id', 'INTEGER')
   ensureColumn(database, 'tasks', 'acceptor_user_id', 'INTEGER')
   ensureColumn(database, 'tasks', 'acceptance_status', "TEXT NOT NULL DEFAULT '待验收'")
@@ -1443,8 +2628,20 @@ async function migrateAndSeed(database: Database): Promise<void> {
   ensureColumn(database, 'tasks', 'collaboration_note', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(database, 'task_records', 'evidence_text', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(database, 'rectifications', 'deadline', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(database, 'rectifications', 'cause_analysis', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(database, 'rectifications', 'support_needed', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(database, 'rectifications', 'responsible_user_id', 'INTEGER')
+  ensureColumn(database, 'rectifications', 'supervisor_user_id', 'INTEGER')
+  ensureColumn(database, 'rectifications', 'review_passed_at', 'TEXT')
+  ensureColumn(database, 'performance_results', 'review_group_confirmed_at', 'TEXT')
+  ensureColumn(database, 'performance_results', 'review_group_user_id', 'INTEGER')
+  ensureColumn(database, 'performance_results', 'leader_final_score', 'REAL')
+  ensureColumn(database, 'performance_results', 'leader_score_comment', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(database, 'performance_results', 'leader_score_confirmed_at', 'TEXT')
+  ensureColumn(database, 'performance_results', 'leader_score_user_id', 'INTEGER')
   ensureColumn(database, 'rectifications', 'review_comment', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(database, 'rectifications', 'evidence_text', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(database, 'medical_record_cases', 'assigned_doctor_user_id', 'INTEGER')
 
   database.exec(`
     UPDATE users
@@ -1456,8 +2653,19 @@ async function migrateAndSeed(database: Database): Promise<void> {
         updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)
     WHERE created_at IS NULL OR updated_at IS NULL;
 
+    UPDATE tasks
+    SET task_category = CASE
+      WHEN task_category = '分管负责人任务' THEN '分管负责人任务及临时突击任务'
+      WHEN task_category IN ('周一重点任务', '医院重点任务', '临时突击任务', '创新发展任务') THEN '周一重点任务及临时突击任务'
+      WHEN task_category IS NULL OR task_category = '' THEN '分管负责人任务及临时突击任务'
+      ELSE task_category
+    END;
+
     CREATE INDEX IF NOT EXISTS idx_task_evidence_attachments_record
     ON task_evidence_attachments(record_id);
+
+    CREATE INDEX IF NOT EXISTS idx_medical_record_cases_updated
+    ON medical_record_cases(updated_at);
   `)
 
   database.exec(`
@@ -1576,6 +2784,8 @@ async function migrateAndSeed(database: Database): Promise<void> {
     'medical',
     '临床员工'
   )
+  syncOfficialAssessmentTemplates(database)
+  seedOfficialStaffingPositions(database)
   seedBusinessData(database)
 }
 
@@ -1643,6 +2853,128 @@ function seedBusinessData(database: Database): void {
     )
   )
   seedBoardResponsibilities(database)
+}
+
+function syncOfficialAssessmentTemplates(database: Database): void {
+  const officialIds = officialAssessmentItems.map((item) => item[0])
+  if (officialIds.length) {
+    const placeholders = officialIds.map((_, index) => `$id${index}`).join(',')
+    const params = Object.fromEntries(officialIds.map((id, index) => [`$id${index}`, id]))
+    runPrepared(
+      database,
+      `UPDATE assessment_items SET enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id NOT IN (${placeholders})`,
+      params
+    )
+  }
+
+  officialAssessmentItems.forEach((item, index) => {
+    const [
+      id,
+      category,
+      boardId,
+      moduleName,
+      title,
+      standard = officialAssessmentStandards.completed,
+      isRedline = false,
+      score = 1,
+      deductScore = 1,
+      requireEvidence = 0
+    ] = item
+    runPrepared(
+      database,
+      `
+      INSERT INTO assessment_items (
+        id, category, board_id, module_name, title, standard, is_redline,
+        score, deduct_score, require_evidence, sort_order, enabled, updated_at
+      )
+      VALUES (
+        $id, $category, $boardId, $moduleName, $title, $standard, $isRedline,
+        $score, $deductScore, $requireEvidence, $sortOrder, 1, CURRENT_TIMESTAMP
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        category = excluded.category,
+        board_id = excluded.board_id,
+        module_name = excluded.module_name,
+        title = excluded.title,
+        standard = excluded.standard,
+        is_redline = excluded.is_redline,
+        score = excluded.score,
+        deduct_score = excluded.deduct_score,
+        require_evidence = excluded.require_evidence,
+        sort_order = excluded.sort_order,
+        enabled = 1,
+        updated_at = CURRENT_TIMESTAMP
+    `,
+      {
+        $id: id,
+        $category: category,
+        $boardId: boardId,
+        $moduleName: moduleName,
+        $title: title,
+        $standard: standard,
+        $isRedline: isRedline ? 1 : 0,
+        $score: score,
+        $deductScore: deductScore,
+        $requireEvidence: requireEvidence ? 1 : 0,
+        $sortOrder: index + 1
+      }
+    )
+  })
+}
+
+function seedOfficialStaffingPositions(database: Database): void {
+  officialStaffingPositions.forEach((item, index) => {
+    const [
+      id,
+      level,
+      positionName,
+      headcount,
+      coreOwner,
+      reportingLeader,
+      concurrentRoles,
+      responsibilities,
+      directPositions,
+      boardId
+    ] = item
+    runPrepared(
+      database,
+      `
+      INSERT INTO staffing_positions (
+        id, level, position_name, headcount, core_owner, reporting_leader,
+        concurrent_roles, responsibilities, direct_positions, board_id, sort_order, enabled
+      )
+      VALUES (
+        $id, $level, $positionName, $headcount, $coreOwner, $reportingLeader,
+        $concurrentRoles, $responsibilities, $directPositions, $boardId, $sortOrder, 1
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        level = excluded.level,
+        position_name = excluded.position_name,
+        headcount = excluded.headcount,
+        core_owner = excluded.core_owner,
+        reporting_leader = excluded.reporting_leader,
+        concurrent_roles = excluded.concurrent_roles,
+        responsibilities = excluded.responsibilities,
+        direct_positions = excluded.direct_positions,
+        board_id = excluded.board_id,
+        sort_order = excluded.sort_order,
+        updated_at = CURRENT_TIMESTAMP
+    `,
+      {
+        $id: id,
+        $level: level,
+        $positionName: positionName,
+        $headcount: headcount,
+        $coreOwner: coreOwner,
+        $reportingLeader: reportingLeader,
+        $concurrentRoles: concurrentRoles,
+        $responsibilities: responsibilities,
+        $directPositions: directPositions,
+        $boardId: boardId,
+        $sortOrder: index + 1
+      }
+    )
+  })
 }
 
 function seedBoardResponsibilities(database: Database): void {
@@ -1744,6 +3076,16 @@ function parseJsonList(value: unknown): string[] {
   } catch {
     return []
   }
+}
+
+function stringifyMedicalRecordStages(value: unknown): string {
+  if (!Array.isArray(value)) return '[]'
+  return JSON.stringify(
+    value
+      .map((item) => String(item).trim())
+      .filter(Boolean)
+      .filter((item, index, array) => array.indexOf(item) === index)
+  )
 }
 
 async function seedUser(
@@ -1922,7 +3264,7 @@ function mapTaskItem(row: Record<string, unknown>) {
     title: String(row.title),
     deadline: String(row.deadline),
     deadlineAt,
-    taskCategory: String(row.task_category || '分管负责人任务'),
+    taskCategory: normalizeTaskCategory(String(row.task_category || '')),
     deployerUserId: row.deployer_user_id ? Number(row.deployer_user_id) : undefined,
     acceptorUserId: row.acceptor_user_id ? Number(row.acceptor_user_id) : undefined,
     acceptanceStatus: String(row.acceptance_status || '待验收'),
@@ -2041,6 +3383,20 @@ function ensureValidManagerTaskPayload(payload: ManagerTaskPayload): void {
   if (!payload.deadlineAt && !payload.deadline.includes(':'))
     throw new Error('中心负责人任务必须选择精确截止时间')
   if (!payload.owner?.trim()) throw new Error('请填写责任人')
+}
+
+function normalizeTaskCategory(category?: string): string {
+  if (category === mondayTaskCategory || category === managerTaskCategory) return category
+  if (category === '分管负责人任务') return managerTaskCategory
+  if (
+    category === '周一重点任务' ||
+    category === '医院重点任务' ||
+    category === '临时突击任务' ||
+    category === '创新发展任务'
+  ) {
+    return mondayTaskCategory
+  }
+  return defaultTaskCategory
 }
 
 function normalizeDateTime(value: string): string {
@@ -2183,8 +3539,11 @@ async function getTaskEvidenceAttachmentRow(attachmentId: number) {
 
 async function getRectifications(actor: { user: AccountUser; permissions: AccountPermission }) {
   const rows = await queryRows(`
-    SELECT r.*, b.name AS board_name, u.display_name AS owner_name
+    SELECT r.*, b.name AS board_name, u.display_name AS owner_name,
+           ru.display_name AS responsible_name, su.display_name AS supervisor_name
     FROM rectifications r
+    LEFT JOIN users ru ON ru.id = r.responsible_user_id
+    LEFT JOIN users su ON su.id = r.supervisor_user_id
     INNER JOIN boards b ON b.id = r.board_id
     INNER JOIN users u ON u.id = r.owner_user_id
     ORDER BY r.updated_at DESC
@@ -2195,12 +3554,22 @@ async function getRectifications(actor: { user: AccountUser; permissions: Accoun
       id: String(row.id),
       source: String(row.source_type) === 'assessment' ? '考核项' : '任务',
       boardName: String(row.board_name),
+      causeAnalysis: String(row.cause_analysis || ''),
+      supportNeeded: String(row.support_needed || ''),
       description: String(row.description),
+      responsibleUserId: row.responsible_user_id ? Number(row.responsible_user_id) : undefined,
+      responsibleName: String(row.responsible_name || row.owner_name || ''),
+      supervisorUserId: row.supervisor_user_id ? Number(row.supervisor_user_id) : undefined,
+      supervisorName: String(row.supervisor_name || ''),
+      deadline: String(row.deadline || ''),
+      reviewComment: String(row.review_comment || ''),
+      evidenceText: String(row.evidence_text || ''),
       owner: String(row.owner_name),
       rectification: String(row.rectification),
       status: String(row.status),
       updatedAt: String(row.updated_at || ''),
-      closedAt: String(row.closed_at || '')
+      closedAt: String(row.closed_at || ''),
+      reviewPassedAt: String(row.review_passed_at || '')
     }))
 }
 
@@ -2385,13 +3754,22 @@ async function ensureCycleReadyToArchive(cycleId: string) {
           AND pr.employee_confirmed_at != ''
           AND pr.manager_confirmed_at IS NOT NULL
           AND pr.manager_confirmed_at != ''
+          AND (
+            COALESCE(r.code, 'R_EMPLOYEE') != 'R_MANAGER'
+            OR (
+              pr.review_group_confirmed_at IS NOT NULL
+              AND pr.review_group_confirmed_at != ''
+            )
+          )
       `,
         { $cycleId: cycleId }
       )
     )[0]?.count || 0
   )
   if (readyCount < totalSubjects) {
-    throw new Error(`周期归档前需完成员工和负责人两级电子确认：${readyCount}/${totalSubjects}`)
+    throw new Error(
+      `周期归档前需完成本人、负责人、考核小组三方电子确认：${readyCount}/${totalSubjects}`
+    )
   }
 }
 
@@ -2414,21 +3792,33 @@ async function ensurePerformanceResultForUser(
     )[0]?.count || 0
   )
   const overdueCount = await countOverdueTasksForUser(cycle.id, user.id, boardIds)
+  const reviewGroupConfirmation = await getPerformanceConfirmation(cycle.id, user.id, 'reviewGroup')
   const employeeConfirmation = await getPerformanceConfirmation(cycle.id, user.id, 'employee')
   const managerConfirmation = await getPerformanceConfirmation(cycle.id, user.id, 'manager')
+  const roleCode = await getUserPrimaryRoleCode(user.id)
   const archivedStatus =
-    cycle.status === 'archived' ? 'archived' : managerConfirmation ? 'ready' : 'draft'
+    cycle.status === 'archived'
+      ? 'archived'
+      : employeeConfirmation &&
+          managerConfirmation &&
+          (roleCode !== 'R_MANAGER' || reviewGroupConfirmation)
+        ? 'ready'
+        : 'draft'
   await runSql(
     `
     INSERT INTO performance_results (
       cycle_id, user_id, board_id, completion_rate, daily_score, redline_penalty, final_score,
+      leader_final_score, leader_score_comment, leader_score_confirmed_at, leader_score_user_id,
       unfinished_count, rectification_count, overdue_count, archived_status,
-      employee_confirmed_at, manager_confirmed_at, manager_user_id, generated_at, updated_at
+      employee_confirmed_at, manager_confirmed_at, manager_user_id,
+      review_group_confirmed_at, review_group_user_id, generated_at, updated_at
     )
     VALUES (
       $cycleId, $userId, $boardId, $completionRate, $dailyScore, $redlinePenalty, $finalScore,
+      NULL, '', NULL, NULL,
       $unfinishedCount, $rectificationCount, $overdueCount, $archivedStatus,
-      $employeeConfirmedAt, $managerConfirmedAt, $managerUserId, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      $employeeConfirmedAt, $managerConfirmedAt, $managerUserId,
+      $reviewGroupConfirmedAt, $reviewGroupUserId, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     )
     ON CONFLICT(cycle_id, user_id) DO UPDATE SET
       board_id = excluded.board_id,
@@ -2436,11 +3826,17 @@ async function ensurePerformanceResultForUser(
       daily_score = excluded.daily_score,
       redline_penalty = excluded.redline_penalty,
       final_score = excluded.final_score,
+      leader_final_score = performance_results.leader_final_score,
+      leader_score_comment = performance_results.leader_score_comment,
+      leader_score_confirmed_at = performance_results.leader_score_confirmed_at,
+      leader_score_user_id = performance_results.leader_score_user_id,
       unfinished_count = excluded.unfinished_count,
       rectification_count = excluded.rectification_count,
       overdue_count = excluded.overdue_count,
       archived_status = excluded.archived_status,
       employee_confirmed_at = COALESCE(excluded.employee_confirmed_at, performance_results.employee_confirmed_at),
+      review_group_confirmed_at = COALESCE(excluded.review_group_confirmed_at, performance_results.review_group_confirmed_at),
+      review_group_user_id = COALESCE(excluded.review_group_user_id, performance_results.review_group_user_id),
       manager_confirmed_at = COALESCE(excluded.manager_confirmed_at, performance_results.manager_confirmed_at),
       manager_user_id = COALESCE(excluded.manager_user_id, performance_results.manager_user_id),
       updated_at = CURRENT_TIMESTAMP
@@ -2459,7 +3855,9 @@ async function ensurePerformanceResultForUser(
       $archivedStatus: archivedStatus,
       $employeeConfirmedAt: employeeConfirmation?.confirmedAt ?? null,
       $managerConfirmedAt: managerConfirmation?.confirmedAt ?? null,
-      $managerUserId: managerConfirmation?.confirmerUserId ?? null
+      $managerUserId: managerConfirmation?.confirmerUserId ?? null,
+      $reviewGroupConfirmedAt: reviewGroupConfirmation?.confirmedAt ?? null,
+      $reviewGroupUserId: reviewGroupConfirmation?.confirmerUserId ?? null
     }
   )
 }
@@ -2526,7 +3924,25 @@ async function upsertPerformanceConfirmation(
     SET employee_confirmed_at = CASE WHEN $role = 'employee' THEN CURRENT_TIMESTAMP ELSE employee_confirmed_at END,
         manager_confirmed_at = CASE WHEN $role = 'manager' THEN CURRENT_TIMESTAMP ELSE manager_confirmed_at END,
         manager_user_id = CASE WHEN $role = 'manager' THEN $confirmerUserId ELSE manager_user_id END,
-        archived_status = CASE WHEN $role = 'manager' THEN 'ready' ELSE archived_status END,
+        review_group_confirmed_at = CASE WHEN $role = 'reviewGroup' THEN CURRENT_TIMESTAMP ELSE review_group_confirmed_at END,
+        review_group_user_id = CASE WHEN $role = 'reviewGroup' THEN $confirmerUserId ELSE review_group_user_id END,
+        archived_status = CASE
+          WHEN employee_confirmed_at IS NOT NULL
+            AND manager_confirmed_at IS NOT NULL
+            AND (
+              NOT EXISTS (
+                SELECT 1
+                FROM user_roles ur
+                INNER JOIN roles r ON r.id = ur.role_id
+                WHERE ur.user_id = performance_results.user_id AND r.code = 'R_MANAGER'
+                LIMIT 1
+              )
+              OR $role = 'reviewGroup'
+              OR review_group_confirmed_at IS NOT NULL
+            )
+          THEN 'ready'
+          ELSE archived_status
+        END,
         updated_at = CURRENT_TIMESTAMP
     WHERE cycle_id = $cycleId AND user_id = $userId
   `,
@@ -2534,16 +3950,63 @@ async function upsertPerformanceConfirmation(
   )
 }
 
+async function updateLeaderScore(
+  cycleId: string,
+  userId: number,
+  leaderUserId: number,
+  finalScore: number,
+  comment: string
+) {
+  await runSql(
+    `
+    UPDATE performance_results
+    SET leader_final_score = $finalScore,
+        leader_score_comment = $comment,
+        leader_score_confirmed_at = CURRENT_TIMESTAMP,
+        leader_score_user_id = $leaderUserId,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE cycle_id = $cycleId AND user_id = $userId
+  `,
+    {
+      $cycleId: cycleId,
+      $userId: userId,
+      $leaderUserId: leaderUserId,
+      $finalScore: finalScore,
+      $comment: comment
+    }
+  )
+}
+
+async function getUserPrimaryRoleCode(userId: number) {
+  const row = (
+    await queryRows(
+      `
+      SELECT r.code AS role_code
+      FROM user_roles ur
+      INNER JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = $userId
+      ORDER BY r.id ASC
+      LIMIT 1
+    `,
+      { $userId: userId }
+    )
+  )[0]
+  return String(row?.role_code || 'R_EMPLOYEE')
+}
+
 async function getPerformanceResultsForActor(
   actor: { user: AccountUser; permissions: AccountPermission },
   cycleId: string
 ) {
   const rows = await queryRows(`
-    SELECT pr.*, u.display_name, u.employee_no, b.name AS board_name, mu.display_name AS manager_name, r.code AS role_code
+    SELECT pr.*, u.display_name, u.employee_no, u.position, b.name AS board_name,
+           mu.display_name AS manager_name, rgu.display_name AS review_group_name,
+           r.code AS role_code
     FROM performance_results pr
     INNER JOIN users u ON u.id = pr.user_id
     LEFT JOIN user_roles ur ON ur.user_id = u.id
     LEFT JOIN roles r ON r.id = ur.role_id
+    LEFT JOIN users rgu ON rgu.id = pr.review_group_user_id
     LEFT JOIN boards b ON b.id = pr.board_id
     LEFT JOIN users mu ON mu.id = pr.manager_user_id
     WHERE pr.cycle_id = '${cycleId.replace(/'/g, "''")}'
@@ -2565,6 +4028,8 @@ function mapPerformanceResult(row: Record<string, unknown>) {
     userId: Number(row.user_id),
     employeeName: String(row.display_name || ''),
     employeeNo: String(row.employee_no || ''),
+    roleCode: String(row.role_code || 'R_EMPLOYEE'),
+    position: String(row.position || ''),
     boardId: String(row.board_id),
     boardName: String(row.board_name || ''),
     completionRate: Number(row.completion_rate || 0),
@@ -2577,6 +4042,16 @@ function mapPerformanceResult(row: Record<string, unknown>) {
     archivedStatus: String(row.archived_status || 'draft'),
     employeeConfirmedAt: String(row.employee_confirmed_at || ''),
     managerConfirmedAt: String(row.manager_confirmed_at || ''),
+    reviewGroupConfirmedAt: String(row.review_group_confirmed_at || ''),
+    reviewGroupUserId: row.review_group_user_id ? Number(row.review_group_user_id) : undefined,
+    reviewGroupName: String(row.review_group_name || ''),
+    leaderFinalScore:
+      row.leader_final_score === null || row.leader_final_score === undefined
+        ? undefined
+        : Number(row.leader_final_score),
+    leaderScoreComment: String(row.leader_score_comment || ''),
+    leaderScoreConfirmedAt: String(row.leader_score_confirmed_at || ''),
+    leaderScoreUserId: row.leader_score_user_id ? Number(row.leader_score_user_id) : undefined,
     managerUserId: row.manager_user_id ? Number(row.manager_user_id) : undefined,
     managerName: String(row.manager_name || ''),
     updatedAt: String(row.updated_at || '')
@@ -2585,26 +4060,39 @@ function mapPerformanceResult(row: Record<string, unknown>) {
 
 function buildConfirmationSummary(results: Array<ReturnType<typeof mapPerformanceResult>>) {
   const totalEmployees = results.length
+  const reviewGroupConfirmedCount = results.filter((item) => item.reviewGroupConfirmedAt).length
   const employeeConfirmedCount = results.filter((item) => item.employeeConfirmedAt).length
   const managerConfirmedCount = results.filter((item) => item.managerConfirmedAt).length
   return {
     totalEmployees,
+    reviewGroupConfirmedCount,
     employeeConfirmedCount,
     managerConfirmedCount,
     readyToArchiveCount: results.filter((item) => item.archivedStatus === 'ready').length,
-    unconfirmedCount: Math.max(totalEmployees - employeeConfirmedCount, 0)
+    unconfirmedCount: results.filter(
+      (item) =>
+        !item.employeeConfirmedAt ||
+        !item.managerConfirmedAt ||
+        (item.roleCode === 'R_MANAGER' && !item.reviewGroupConfirmedAt)
+    ).length
   }
 }
 
 function buildConfirmationGaps(results: Array<ReturnType<typeof mapPerformanceResult>>) {
   return results
-    .filter((item) => !item.employeeConfirmedAt || !item.managerConfirmedAt)
+    .filter(
+      (item) =>
+        !item.employeeConfirmedAt ||
+        !item.managerConfirmedAt ||
+        (item.roleCode === 'R_MANAGER' && !item.reviewGroupConfirmedAt)
+    )
     .map((item) => ({
       userId: item.userId,
       employeeName: item.employeeName,
       employeeNo: item.employeeNo,
       boardId: item.boardId,
       boardName: item.boardName,
+      missingReviewGroupConfirmation: item.roleCode === 'R_MANAGER' && !item.reviewGroupConfirmedAt,
       missingEmployeeConfirmation: !item.employeeConfirmedAt,
       missingManagerConfirmation: !item.managerConfirmedAt,
       archivedStatus: item.archivedStatus
@@ -2657,7 +4145,12 @@ async function buildRiskSummary(
   ).length
   return {
     overdueTaskCount: results.reduce((total, item) => total + item.overdueCount, 0),
-    unconfirmedEmployeeCount: results.filter((item) => !item.employeeConfirmedAt).length,
+    unconfirmedEmployeeCount: results.filter(
+      (item) =>
+        !item.employeeConfirmedAt ||
+        !item.managerConfirmedAt ||
+        (item.roleCode === 'R_MANAGER' && !item.reviewGroupConfirmedAt)
+    ).length,
     openRectificationCount: rectifications.filter((item) => item.status !== '已销号').length,
     redlineCount,
     lowScoreEmployees: results
@@ -2783,6 +4276,154 @@ async function getBoardResponsibilityConfig() {
     officeCoordinatorName: String(row.office_coordinator_name || '')
   }))
 }
+function mapStaffingPosition(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    level: String(row.level),
+    positionName: String(row.position_name),
+    headcount: Number(row.headcount || 0),
+    coreOwner: String(row.core_owner || ''),
+    reportingLeader: String(row.reporting_leader || ''),
+    concurrentRoles: String(row.concurrent_roles || ''),
+    responsibilities: String(row.responsibilities || ''),
+    directPositions: String(row.direct_positions || ''),
+    boardId: String(row.board_id || ''),
+    boardName: String(row.board_name || ''),
+    enabled: Number(row.enabled || 0) === 1,
+    sortOrder: Number(row.sort_order || 0),
+    updatedAt: String(row.updated_at || '')
+  }
+}
+
+function mapMedicalRecordCase(row: Record<string, unknown>): MedicalRecordCaseItem {
+  return {
+    id: Number(row.id),
+    caseNo: String(row.case_no),
+    templateKey: String(row.template_key || 'mixed_hemorrhoid_ligation'),
+    title: String(row.title || ''),
+    status: normalizeMedicalRecordStatus(row.status),
+    assignedDoctorUserId: row.assigned_doctor_user_id ? Number(row.assigned_doctor_user_id) : null,
+    assignedDoctorName: String(row.assigned_doctor_name || ''),
+    values: parseMedicalRecordValues(row.values_json),
+    createdBy: Number(row.created_by || 0),
+    createdByName: String(row.created_by_name || ''),
+    updatedBy: Number(row.updated_by || 0),
+    updatedByName: String(row.updated_by_name || ''),
+    createdAt: String(row.created_at || ''),
+    updatedAt: String(row.updated_at || '')
+  }
+}
+
+async function getMedicalRecordCaseByNo(
+  userId: number,
+  caseNo: string
+): Promise<MedicalRecordCaseItem> {
+  await requireActor(userId)
+  const row = (
+    await queryRows(
+      `
+      SELECT mrc.*,
+             creator.display_name AS created_by_name,
+             updater.display_name AS updated_by_name,
+             assigned_doctor.display_name AS assigned_doctor_name
+      FROM medical_record_cases mrc
+      LEFT JOIN users creator ON creator.id = mrc.created_by
+      LEFT JOIN users updater ON updater.id = mrc.updated_by
+      LEFT JOIN users assigned_doctor ON assigned_doctor.id = mrc.assigned_doctor_user_id
+      WHERE mrc.case_no = $caseNo
+      LIMIT 1
+    `,
+      { $caseNo: caseNo }
+    )
+  )[0]
+  if (!row) throw new Error('病历不存在')
+  return mapMedicalRecordCase(row)
+}
+
+async function createMedicalRecordCaseNo(): Promise<string> {
+  const datePart = new Date().toISOString().slice(0, 10).replaceAll('-', '')
+  const prefix = `MR${datePart}`
+  const row = (
+    await queryRows(
+      'SELECT COUNT(1) AS total FROM medical_record_cases WHERE case_no LIKE $prefix',
+      { $prefix: `${prefix}-%` }
+    )
+  )[0]
+  return `${prefix}-${String(Number(row?.total || 0) + 1).padStart(3, '0')}`
+}
+
+function validateMedicalRecordPayload(payload: MedicalRecordCasePayload): void {
+  if (!payload.title?.trim()) throw new Error('请填写病历标题')
+  if (payload.status && !['draft', 'submitted', 'approved'].includes(payload.status))
+    throw new Error('病历状态不正确')
+}
+
+async function resolveAssignedDoctorUserId(
+  actor: { permissions: AccountPermission },
+  value: number | null | undefined
+): Promise<number | null> {
+  if (value === undefined || value === null || Number(value) === 0) return null
+  if (actor.permissions.roleCode !== 'R_SUPER') throw new Error('仅超级管理员可指定病历医师')
+  const doctor = await findUserById(Number(value))
+  if (!doctor || doctor.status !== 'active') throw new Error('指定医师账号不存在或已停用')
+  if (!doctor.medicalRecordStages.includes('doctor')) {
+    throw new Error('指定账号未配置“医生填写”病历权限')
+  }
+  return doctor.id
+}
+
+async function resolveMedicalRecordAssignment(
+  actor: { permissions: AccountPermission },
+  current: Record<string, unknown>,
+  payload: MedicalRecordCasePayload
+): Promise<number | null> {
+  const currentAssignedDoctorId = current.assigned_doctor_user_id
+    ? Number(current.assigned_doctor_user_id)
+    : null
+  if (payload.assignedDoctorUserId === undefined) return currentAssignedDoctorId
+  const requestedDoctorId =
+    payload.assignedDoctorUserId === null || Number(payload.assignedDoctorUserId) === 0
+      ? null
+      : Number(payload.assignedDoctorUserId)
+  if (requestedDoctorId === currentAssignedDoctorId) return currentAssignedDoctorId
+  return resolveAssignedDoctorUserId(actor, payload.assignedDoctorUserId)
+}
+
+function ensureMedicalRecordStatusChangeAllowed(
+  actor: { user: AccountUser; permissions: AccountPermission },
+  current: Record<string, unknown>,
+  nextStatus: 'draft' | 'submitted' | 'approved',
+  assignedDoctorUserId: number | null
+): void {
+  const currentStatus = normalizeMedicalRecordStatus(current.status)
+  const isSuperAdmin = actor.permissions.roleCode === 'R_SUPER'
+  const isAssignedDoctor = Boolean(assignedDoctorUserId && actor.user.id === assignedDoctorUserId)
+
+  if (currentStatus === 'approved' && !isSuperAdmin) throw new Error('病历已审核，不能继续修改')
+  if (currentStatus === nextStatus) return
+
+  if (nextStatus === 'submitted' && !assignedDoctorUserId) {
+    throw new Error('请先由超级管理员指定审核医师')
+  }
+  if (nextStatus === 'approved' && !isSuperAdmin && !isAssignedDoctor) {
+    throw new Error('仅指定医师可审核通过该病历')
+  }
+}
+
+function normalizeMedicalRecordStatus(status: unknown): 'draft' | 'submitted' | 'approved' {
+  if (status === 'submitted' || status === 'approved') return status
+  return 'draft'
+}
+
+function parseMedicalRecordValues(value: unknown): Record<string, string | string[]> {
+  try {
+    const parsed = JSON.parse(String(value || '{}'))
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 function buildMyAssessmentGroups(options: {
   actor: { user: AccountUser; permissions: AccountPermission }
   visibleBoards: Array<{ id: string; name: string }>
@@ -3003,7 +4644,7 @@ async function closeDraftRectification(
 ) {
   if (workflowStatus === 'rectifying') return
   await runSql(
-    `UPDATE rectifications SET status = '已销号', closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE source_type = $sourceType AND source_record_id = $recordId AND status != '已销号'`,
+    `UPDATE rectifications SET status = '已销号', closed_at = CURRENT_TIMESTAMP, review_passed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE source_type = $sourceType AND source_record_id = $recordId AND status != '已销号'`,
     { $sourceType: sourceType, $recordId: recordId }
   )
 }
@@ -3013,7 +4654,7 @@ async function reopenRectificationForRectifyingRecord(
   recordId: number
 ) {
   await runSql(
-    `UPDATE rectifications SET status = '整改中', closed_by = NULL, closed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE source_type = $sourceType AND source_record_id = $recordId AND status = '已销号'`,
+    `UPDATE rectifications SET status = '整改中', closed_by = NULL, closed_at = NULL, review_passed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE source_type = $sourceType AND source_record_id = $recordId AND status = '已销号'`,
     { $sourceType: sourceType, $recordId: recordId }
   )
 }
@@ -3031,11 +4672,21 @@ async function upsertRectification(options: {
 }) {
   await runSql(
     `
-    INSERT INTO rectifications (cycle_id, source_type, source_record_id, board_id, owner_user_id, description, rectification, deadline, evidence_text, status, updated_at)
-    VALUES ($cycleId, $sourceType, $sourceRecordId, $boardId, $ownerUserId, $description, $rectification, $deadline, $evidenceText, '待整改', CURRENT_TIMESTAMP)
+    INSERT INTO rectifications (
+      cycle_id, source_type, source_record_id, board_id, owner_user_id, description,
+      cause_analysis, support_needed, rectification, responsible_user_id,
+      deadline, evidence_text, status, updated_at
+    )
+    VALUES (
+      $cycleId, $sourceType, $sourceRecordId, $boardId, $ownerUserId, $description,
+      $causeAnalysis, $supportNeeded, $rectification, $responsibleUserId,
+      $deadline, $evidenceText, '待整改', CURRENT_TIMESTAMP
+    )
     ON CONFLICT(source_type, source_record_id) DO UPDATE SET
       rectification = excluded.rectification,
+      responsible_user_id = excluded.responsible_user_id,
       deadline = excluded.deadline,
+      review_passed_at = CASE WHEN rectifications.status = '已销号' THEN NULL ELSE rectifications.review_passed_at END,
       evidence_text = excluded.evidence_text,
       status = CASE WHEN rectifications.status = '已销号' THEN '待整改' ELSE rectifications.status END,
       updated_at = CURRENT_TIMESTAMP
@@ -3045,7 +4696,10 @@ async function upsertRectification(options: {
       $sourceType: options.sourceType,
       $sourceRecordId: options.sourceRecordId,
       $boardId: options.boardId,
+      $causeAnalysis: '',
+      $supportNeeded: '',
       $ownerUserId: options.ownerUserId,
+      $responsibleUserId: options.ownerUserId,
       $description: options.description,
       $rectification: options.rectification,
       $deadline: options.deadline || '',
@@ -3122,7 +4776,8 @@ function mapAccountUser(row: Record<string, unknown>): AccountUser {
     boardId: String(row.board_id || 'medical'),
     position: String(row.position || ''),
     mobile: String(row.mobile || ''),
-    elderlyFriendly: Number(row.elderly_friendly || 0) === 1
+    elderlyFriendly: Number(row.elderly_friendly || 0) === 1,
+    medicalRecordStages: parseJsonList(row.medical_record_stages)
   }
 }
 
@@ -3138,7 +4793,8 @@ function mapEmployee(user: AccountUser, roleCode: string) {
     position: user.position,
     mobile: user.mobile,
     status: user.status === 'active' ? 'active' : 'inactive',
-    elderlyFriendly: user.elderlyFriendly
+    elderlyFriendly: user.elderlyFriendly,
+    medicalRecordStages: user.medicalRecordStages
   }
 }
 

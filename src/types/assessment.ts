@@ -18,12 +18,7 @@ export type TodoPriority = 'normal' | 'warning' | 'urgent'
 export type TodoSource = 'assessment' | 'task' | 'rectification' | 'review'
 export type EmployeeStatus = 'active' | 'inactive'
 export type SystemRoleCode = 'R_SUPER' | 'R_LEADER' | 'R_MANAGER' | 'R_EMPLOYEE'
-export type TaskCategory =
-  | '周一重点任务'
-  | '医院重点任务'
-  | '分管负责人任务'
-  | '临时突击任务'
-  | '创新发展任务'
+export type TaskCategory = '周一重点任务及临时突击任务' | '分管负责人任务及临时突击任务'
 
 export type RoleId =
   | 'superAdmin'
@@ -189,8 +184,20 @@ export interface RectificationItem {
   boardName: string
   description: string
   owner: string
+  causeAnalysis?: string
+  supportNeeded?: string
   rectification: string
+  responsibleUserId?: number
+  responsibleName?: string
+  supervisorUserId?: number
+  supervisorName?: string
+  deadline?: string
+  reviewComment?: string
+  evidenceText?: string
   status: '待整改' | '整改中' | '已销号'
+  updatedAt?: string
+  closedAt?: string
+  reviewPassedAt?: string
 }
 
 export interface ScoreSummary {
@@ -364,6 +371,8 @@ export interface PerformanceResult {
   userId: number
   employeeName: string
   employeeNo: string
+  roleCode: SystemRoleCode
+  position: string
   boardId: BoardId
   boardName: string
   completionRate: number
@@ -378,6 +387,13 @@ export interface PerformanceResult {
   managerConfirmedAt: string
   managerUserId?: number
   managerName?: string
+  reviewGroupConfirmedAt: string
+  reviewGroupUserId?: number
+  reviewGroupName?: string
+  leaderFinalScore?: number
+  leaderScoreComment?: string
+  leaderScoreConfirmedAt?: string
+  leaderScoreUserId?: number
   updatedAt: string
 }
 
@@ -385,7 +401,7 @@ export interface PerformanceConfirmation {
   id: number
   cycleId: string
   userId: number
-  role: 'employee' | 'manager'
+  role: 'employee' | 'manager' | 'reviewGroup'
   confirmerUserId: number
   comment: string
   confirmedAt: string
@@ -418,6 +434,7 @@ export interface ConfirmationSummary {
   totalEmployees: number
   employeeConfirmedCount: number
   managerConfirmedCount: number
+  reviewGroupConfirmedCount: number
   readyToArchiveCount: number
   unconfirmedCount: number
 }
@@ -430,7 +447,39 @@ export interface ConfirmationGapItem {
   boardName: string
   missingEmployeeConfirmation: boolean
   missingManagerConfirmation: boolean
+  missingReviewGroupConfirmation: boolean
   archivedStatus: 'draft' | 'ready' | 'archived'
+}
+
+export interface StaffingPosition {
+  id: string
+  level: string
+  positionName: string
+  headcount: number
+  coreOwner: string
+  reportingLeader: string
+  concurrentRoles: string
+  responsibilities: string
+  directPositions: string
+  boardId: string
+  boardName: string
+  enabled: boolean
+  sortOrder: number
+  updatedAt: string
+}
+
+export interface StaffingPositionUpdatePayload {
+  level?: string
+  positionName?: string
+  headcount?: number
+  coreOwner?: string
+  reportingLeader?: string
+  concurrentRoles?: string
+  responsibilities?: string
+  directPositions?: string
+  boardId?: string
+  enabled?: boolean
+  sortOrder?: number
 }
 
 export interface BoardResponsibilityConfig {
@@ -501,6 +550,12 @@ export interface TaskRecordPayload {
   targetUserId?: number
 }
 
+export interface ReviewGroupConfirmPayload {
+  comment?: string
+  leaderFinalScore?: number
+  leaderScoreComment?: string
+}
+
 export interface AssessmentAssistPayload {
   targetUser: EmployeeProfile & { userId?: number }
   currentCycle: AssessmentCycle
@@ -517,6 +572,16 @@ export interface ReviewActionPayload {
 
 export interface RectificationClosePayload {
   comment?: string
+}
+
+export interface RectificationUpdatePayload {
+  causeAnalysis?: string
+  supportNeeded?: string
+  rectification?: string
+  deadline?: string
+  responsibleUserId?: number | null
+  supervisorUserId?: number | null
+  status?: '待整改' | '整改中'
 }
 
 export interface AssessmentExportPayload extends AssessmentBootstrapPayload {

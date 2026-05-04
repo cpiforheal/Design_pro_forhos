@@ -159,11 +159,8 @@
 
   const localDrafts = ref<EditableTask[]>([])
   const taskCategoryOptions: TaskCategory[] = [
-    '周一重点任务',
-    '医院重点任务',
-    '分管负责人任务',
-    '临时突击任务',
-    '创新发展任务'
+    '周一重点任务及临时突击任务',
+    '分管负责人任务及临时突击任务'
   ]
 
   const editableTasks = computed(() =>
@@ -181,7 +178,7 @@
     localDrafts.value = managedBoardTaskList.value.map((task) => ({
       ...task,
       deadlineAt: task.deadlineAt || task.deadline,
-      taskCategory: task.taskCategory || '分管负责人任务',
+      taskCategory: task.taskCategory || '分管负责人任务及临时突击任务',
       acceptanceStatus: task.acceptanceStatus || '待验收',
       collaborationNote: task.collaborationNote || '',
       assigneeMode: task.assigneeMode || 'board',
@@ -197,7 +194,7 @@
       title: '',
       deadline: '',
       deadlineAt: '',
-      taskCategory: '分管负责人任务',
+      taskCategory: '分管负责人任务及临时突击任务',
       acceptanceStatus: '待验收',
       collaborationNote: '',
       owner: currentBoard.value.owner,

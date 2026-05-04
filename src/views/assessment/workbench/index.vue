@@ -384,7 +384,7 @@
           task.source === '医院安排'
             ? hospitalTaskDrafts.value[task.id]
             : boardTaskDrafts.value[task.id]
-        const status = draft?.status ?? 'completed'
+        const status = draft?.status ?? 'pending'
         if (status === 'completed') stats.completed += 1
         else stats.pending += 1
         return stats
@@ -430,7 +430,7 @@
         source: task.source,
         owner: task.owner,
         deadline: task.deadline,
-        status: draft?.status ?? 'completed'
+        status: draft?.status ?? 'pending'
       }
     })
   )
@@ -441,7 +441,7 @@
         task.source === '医院安排'
           ? hospitalTaskDrafts.value[task.id]
           : boardTaskDrafts.value[task.id]
-      const status = draft?.status ?? 'completed'
+      const status = draft?.status ?? 'pending'
       const statusType: ElTagType =
         status === 'completed' ? 'success' : status === 'pending' ? 'warning' : 'info'
       return {
@@ -485,8 +485,8 @@
 
   .task-chart-summary {
     display: flex;
-    justify-content: space-around;
     gap: 12px;
+    justify-content: space-around;
     margin-top: 8px;
     font-size: 13px;
     color: var(--art-text-gray-600);

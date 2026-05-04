@@ -24,6 +24,17 @@ export const adminRoutes: AppRouteRecord = {
       }
     },
     {
+      path: 'login-logs',
+      name: 'AssessmentLoginLogs',
+      component: '/assessment/admin/login-logs',
+      meta: {
+        title: '账号日志',
+        icon: 'ri:file-list-3-line',
+        menuPermission: 'employee-view',
+        roles: ['R_SUPER']
+      }
+    },
+    {
       path: 'new-user',
       name: 'AssessmentNewUser',
       component: '/assessment/admin/new-user',
@@ -52,6 +63,17 @@ export const adminRoutes: AppRouteRecord = {
       meta: {
         title: '组织责任配置',
         icon: 'ri:organization-chart',
+        menuPermission: 'organization-config',
+        roles: ['R_SUPER']
+      }
+    },
+    {
+      path: 'staffing',
+      name: 'AssessmentStaffing',
+      component: '/assessment/admin/staffing',
+      meta: {
+        title: '定编定岗',
+        icon: 'ri:team-line',
         menuPermission: 'organization-config',
         roles: ['R_SUPER']
       }

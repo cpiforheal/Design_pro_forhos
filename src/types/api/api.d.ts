@@ -87,6 +87,7 @@ declare namespace Api {
       position?: string
       mobile?: string
       elderlyFriendly?: boolean
+      medicalRecordStages?: string[]
       dataScope?: 'all' | 'board' | 'self'
       menuPermissions?: string[]
     }

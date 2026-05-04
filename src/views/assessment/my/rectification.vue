@@ -18,6 +18,24 @@
         </div>
         <h3>{{ item.description }}</h3>
         <p>{{ item.rectification }}</p>
+        <dl class="rectification-meta">
+          <div>
+            <dt>原因分析</dt>
+            <dd>{{ item.causeAnalysis || '待负责人补充' }}</dd>
+          </div>
+          <div>
+            <dt>需支持</dt>
+            <dd>{{ item.supportNeeded || '暂无' }}</dd>
+          </div>
+          <div>
+            <dt>督办负责人</dt>
+            <dd>{{ item.supervisorName || '未指定' }}</dd>
+          </div>
+          <div>
+            <dt>整改时限</dt>
+            <dd>{{ item.deadline || '按本周期要求完成' }}</dd>
+          </div>
+        </dl>
       </el-card>
     </div>
     <el-empty v-else description="当前没有需要整改的事项" />
@@ -61,9 +79,9 @@
 
   .card-header {
     display: flex;
+    gap: 12px;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
     color: #64748b;
   }
 
@@ -74,8 +92,32 @@
     }
 
     p {
-      color: #64748b;
       line-height: 1.7;
+      color: #64748b;
+    }
+  }
+
+  .rectification-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 14px 0 0;
+
+    div {
+      padding: 10px;
+      background: #f8fafc;
+      border-radius: 12px;
+    }
+
+    dt {
+      margin-bottom: 4px;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+
+    dd {
+      margin: 0;
+      color: #334155;
     }
   }
 </style>

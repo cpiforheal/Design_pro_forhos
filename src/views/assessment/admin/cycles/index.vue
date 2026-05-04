@@ -51,7 +51,10 @@
           <ElTag v-if="row.missingEmployeeConfirmation" type="warning" class="mr-1">
             员工未确认
           </ElTag>
-          <ElTag v-if="row.missingManagerConfirmation" type="danger">负责人未确认</ElTag>
+          <ElTag v-if="row.missingManagerConfirmation" type="danger" class="mr-1">
+            负责人未确认
+          </ElTag>
+          <ElTag v-if="row.missingReviewGroupConfirmation" type="info">考核小组未复核</ElTag>
         </template>
       </ElTableColumn>
     </ElTable>
@@ -132,7 +135,7 @@
   const confirmationText = computed(() => {
     const summary = bootstrap.value?.confirmationSummary
     if (!summary) return ''
-    return `当前周期确认进度：员工确认 ${summary.employeeConfirmedCount}/${summary.totalEmployees}，负责人确认 ${summary.managerConfirmedCount}/${summary.totalEmployees}，可归档 ${summary.readyToArchiveCount}/${summary.totalEmployees}`
+    return `当前周期确认进度：本人确认 ${summary.employeeConfirmedCount}/${summary.totalEmployees}，负责人确认 ${summary.managerConfirmedCount}/${summary.totalEmployees}，考核小组复核 ${summary.reviewGroupConfirmedCount}/${summary.totalEmployees}，可归档 ${summary.readyToArchiveCount}/${summary.totalEmployees}`
   })
   const confirmationGaps = computed(() => bootstrap.value?.confirmationGaps ?? [])
 

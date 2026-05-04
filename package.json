@@ -12,6 +12,8 @@
     "dev:full": "concurrently \"pnpm api\" \"pnpm dev\"",
     "build": "vue-tsc --noEmit && vite build",
     "serve": "vite preview",
+    "typecheck:server": "tsc -p tsconfig.server.json",
+    "test": "tsx --test tests/**/*.test.ts",
     "lint": "eslint",
     "fix": "eslint --fix",
     "lint:prettier": "prettier --write \"**/*.{js,cjs,ts,json,tsx,css,less,scss,vue,html,md}\"",

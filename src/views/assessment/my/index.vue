@@ -25,10 +25,15 @@
         <ElTag type="success" size="large">{{ currentAssessmentCycle.name }}</ElTag>
         <h1>我的考核</h1>
         <p>
-          {{ currentEmployee.name }}，{{
-            permissionSummary
-          }}。先处理红色和黄色提醒，完成后提交等待负责人审核。
+          {{
+            currentEmployee.name
+          }}，今天只需要先看“我的待办”。红色、黄色提醒处理完后，点击提交即可进入负责人审核。
         </p>
+      </div>
+      <div class="hero-score">
+        <span>需要处理</span>
+        <strong>{{ actionTodoCount }}</strong>
+        <small>{{ actionTodoCount ? '项待办' : '当前无待办' }}</small>
       </div>
       <div class="hero-score">
         <span>当前得分</span>
@@ -36,16 +41,6 @@
         <small>完成率 {{ formatRate(summary.completionRate) }}</small>
       </div>
     </section>
-
-    <ElRow :gutter="16" class="metric-row">
-      <ElCol v-for="metric in metrics" :key="metric.label" :xs="12" :md="6">
-        <ElCard class="metric-card" shadow="never">
-          <span>{{ metric.label }}</span>
-          <strong>{{ metric.value }}</strong>
-          <small>{{ metric.hint }}</small>
-        </ElCard>
-      </ElCol>
-    </ElRow>
 
     <ElAlert
       v-if="submitResultVisible"
@@ -63,11 +58,16 @@
         <div class="panel-header">
           <div>
             <strong>我的待办</strong>
-            <p>系统已经把考核项、任务、退回和整改收在一个入口里。</p>
+            <p>先完成这里列出的事项；没有待办时直接提交本周期考核。</p>
           </div>
-          <ElButton type="primary" size="large" :loading="loading" @click="confirmSubmit">
-            提交本周期考核
-          </ElButton>
+          <div class="panel-actions">
+            <ElButton v-if="!isElderlyFriendly" size="large" @click="toggleConfirmDetails">
+              {{ showConfirmDetails ? '收起明细' : '查看明细' }}
+            </ElButton>
+            <ElButton type="primary" size="large" :loading="loading" @click="confirmSubmit">
+              提交本周期考核
+            </ElButton>
+          </div>
         </div>
       </template>
 
@@ -84,7 +84,10 @@
           <template #default="{ row }">
             <div class="todo-title-cell">
               <ElTag :type="row.tagType" effect="light" size="small">{{ row.sourceText }}</ElTag>
-              <span>{{ row.title }}</span>
+              <div>
+                <span>{{ row.title }}</span>
+                <p v-if="row.standard">{{ row.standard }}</p>
+              </div>
             </div>
           </template>
         </ElTableColumn>
@@ -104,7 +107,7 @@
       <ElEmpty v-else description="当前没有待处理事项" />
     </ElCard>
 
-    <ElCard v-if="!isElderlyFriendly" class="panel-card" shadow="never">
+    <ElCard v-if="!isElderlyFriendly && showConfirmDetails" class="panel-card" shadow="never">
       <template #header>
         <div class="panel-header">
           <div>
@@ -209,22 +212,26 @@
   import { ElMessageBox } from 'element-plus'
   import { useAssessmentPlatform } from '@/composables/useAssessmentPlatform'
   import AssessmentNoticeTicker from '@/views/assessment/components/AssessmentNoticeTicker.vue'
-  import type { AssessmentStatus, AssessmentTodoItem, TaskItem } from '@/types/assessment'
+  import type {
+    AssessmentItem,
+    AssessmentStatus,
+    AssessmentTodoItem,
+    TaskItem
+  } from '@/types/assessment'
 
   const router = useRouter()
   const submitResultVisible = ref(false)
+  const showConfirmDetails = ref(false)
   const activeConfirmTab = ref<'common' | 'board'>('common')
   const {
     loading,
     currentAssessmentCycle,
     currentEmployee,
-    permissionSummary,
     commonAssessmentItems,
     currentBoardItems,
     currentTasks,
     commonDrafts,
     boardDrafts,
-    rectificationItems,
     myTodoSummary,
     myPendingItems,
     myReturnedItems,
@@ -263,27 +270,10 @@
       : '待办会在本页集中显示'
   ])
 
-  const metrics = computed(() => [
-    {
-      label: '待处理',
-      value:
-        myTodoSummary.value.pending + myTodoSummary.value.returned + myTodoSummary.value.rectifying,
-      hint: '需要本人处理'
-    },
-    { label: '待审核', value: myTodoSummary.value.reviewing, hint: '已提交等待审核' },
-    {
-      label: '整改中',
-      value:
-        myTodoSummary.value.rectifying ||
-        rectificationItems.value.filter((item) => item.status !== '已销号').length,
-      hint: '需补救闭环'
-    },
-    {
-      label: '已完成',
-      value: myTodoSummary.value.completed || summary.value.completedCount,
-      hint: '本周期完成项'
-    }
-  ])
+  const actionTodoCount = computed(
+    () =>
+      myTodoSummary.value.pending + myTodoSummary.value.returned + myTodoSummary.value.rectifying
+  )
 
   const todoTableRows = computed(() => [
     ...myReturnedItems.value.map((item) => toTodoRow(item, 'danger', '去补充')),
@@ -305,11 +295,17 @@
     submitResultVisible.value = true
   }
 
+  function toggleConfirmDetails() {
+    showConfirmDetails.value = !showConfirmDetails.value
+  }
+
   function toTodoRow(item: AssessmentTodoItem, tagType: string, actionText: string) {
+    const assessmentItem = findAssessmentItem(item)
     return {
       ...item,
-      tagType,
-      sourceText: getSourceText(item.source),
+      tagType: getTodoTagType(item, assessmentItem, tagType),
+      sourceText: getSourceText(item, assessmentItem),
+      standard: assessmentItem?.standard || item.description,
       statusText: getWorkflowText(item.workflowStatus),
       statusType: getWorkflowTagType(item.workflowStatus),
       actionText,
@@ -329,13 +325,52 @@
       router.push('/employee-assessment/rectification')
       return
     }
-    activeConfirmTab.value = item.boardId === 'allStaff' ? 'common' : 'board'
+    router.push({
+      path: '/employee-assessment/tasks',
+      query: {
+        assessmentId: item.id.replace('my-assessment-', ''),
+        scope: item.boardId === 'allStaff' ? 'common' : 'board'
+      }
+    })
   }
 
-  function getSourceText(source: string) {
-    if (source === 'task') return '任务'
-    if (source === 'rectification') return '整改'
-    return '考核'
+  function getSourceText(item: AssessmentTodoItem, assessmentItem?: AssessmentItem) {
+    if (item.source === 'task') {
+      const task = findTaskItem(item)
+      return task?.source === '医院安排' ? '医院安排' : '负责人安排'
+    }
+    if (item.source === 'rectification') return '整改'
+    if (assessmentItem?.isRedline) return '红线考核'
+    return item.boardId === 'allStaff' ? '全员通用' : '岗位专项'
+  }
+
+  function getTodoTagType(
+    item: AssessmentTodoItem,
+    assessmentItem: AssessmentItem | undefined,
+    fallback: string
+  ) {
+    if (assessmentItem?.isRedline) return 'danger'
+    if (item.source === 'task') {
+      const task = findTaskItem(item)
+      return task?.source === '医院安排' ? 'primary' : 'warning'
+    }
+    if (item.source === 'rectification') return 'danger'
+    if (item.boardId === 'allStaff') return 'success'
+    return fallback
+  }
+
+  function findAssessmentItem(item: AssessmentTodoItem) {
+    if (item.source !== 'assessment') return undefined
+    const itemId = item.id.replace('my-assessment-', '')
+    return [...commonAssessmentItems.value, ...currentBoardItems.value].find(
+      (assessment) => assessment.id === itemId
+    )
+  }
+
+  function findTaskItem(item: AssessmentTodoItem) {
+    if (item.source !== 'task') return undefined
+    const taskId = item.id.replace('my-task-', '')
+    return currentTasks.value.find((task) => task.id === taskId)
   }
 
   function getWorkflowText(status: string) {
@@ -374,7 +409,6 @@
   }
 
   .page-alert,
-  .metric-row,
   .panel-card {
     margin-bottom: 16px;
   }
@@ -424,24 +458,9 @@
     }
   }
 
-  .metric-card,
   .panel-card {
     border: 0;
     border-radius: 12px;
-  }
-
-  .metric-card {
-    span,
-    small {
-      color: #64748b;
-    }
-
-    strong {
-      display: block;
-      margin: 8px 0 4px;
-      font-size: 30px;
-      color: #0f172a;
-    }
   }
 
   .panel-header {
@@ -456,17 +475,36 @@
     }
   }
 
+  .panel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+
   .todo-title-cell {
     display: flex;
     gap: 10px;
-    align-items: center;
+    align-items: flex-start;
     min-width: 0;
 
-    span:last-child {
+    > div {
+      min-width: 0;
+    }
+
+    span {
+      display: block;
       overflow: hidden;
       color: #0f172a;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    p {
+      margin: 4px 0 0;
+      line-height: 1.5;
+      color: #64748b;
+      white-space: normal;
     }
   }
 

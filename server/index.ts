@@ -1,38 +1,48 @@
 ﻿import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import express, { NextFunction, Request, Response } from 'express'
+import express, { NextFunction, Request, RequestHandler, Response } from 'express'
 import cors from 'cors'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import multer from 'multer'
+import { loadServerEnv } from './env'
 import {
   addTaskEvidenceAttachment,
   closeRectification,
   confirmPerformance,
   createAccountUser,
   createManagedBoardTask,
+  createMedicalRecordCase,
   findUserById,
   findUserByUsername,
   getAssessmentBootstrap,
   getAssessmentAssist,
   getAssessmentExport,
+  getMedicalRecordCase,
   getTaskEvidenceAttachmentForDownload,
   getDatabase,
   getReviewLogs,
   getUserPermissions,
+  listLoginLogs,
   listBoardResponsibilityConfig,
   listAccountUsers,
   listAssessmentCycles,
   listAssessmentTemplates,
   listManagedBoardTasks,
+  listMedicalRecordCases,
+  listMedicalRecordDoctors,
   listPerformanceResults,
   listRoleGrants,
+  listStaffingPositions,
   managerConfirmPerformance,
   publishManagedBoardTask,
+  recordLoginLog,
+  reviewGroupConfirmPerformance,
   reviewRecord,
   createAssessmentCycle,
   deleteTaskEvidenceAttachment,
+  resetAccountUserPassword,
   saveAssessmentRecord,
   saveTaskRecord,
   submitAssessment,
@@ -42,32 +52,36 @@ import {
   updateAssessmentCycleStatus,
   updateAssessmentTemplate,
   updateBoardResponsibilityConfig,
+  updateRectification,
   updateRoleGrant,
-  updateManagedBoardTask
+  updateStaffingPosition,
+  updateManagedBoardTask,
+  updateMedicalRecordCase
 } from './sqlite'
 
+const serverEnv = loadServerEnv()
 const app = express()
-const port = Number(process.env.HOSPITAL_API_PORT || 3010)
-const jwtSecret = process.env.HOSPITAL_JWT_SECRET || 'hospital-assessment-local-secret'
-const taskEvidenceUploadDir = path.resolve(process.cwd(), 'server/data/uploads/task-evidence')
-const taskEvidenceMaxSize = 20 * 1024 * 1024
-const taskEvidenceMimeTypes = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/zip',
-  'application/x-zip-compressed',
-  'application/x-rar-compressed',
-  'application/x-7z-compressed'
-])
+const { port, isProduction, jwtSecret, corsOrigins } = serverEnv
+const taskEvidenceUploadDir = path.resolve(process.cwd(), serverEnv.taskEvidenceUploadDir)
+const taskEvidenceMaxSize = serverEnv.taskEvidenceMaxSize
+const taskEvidenceAllowedTypes: Record<string, Set<string>> = {
+  'image/jpeg': new Set(['.jpg', '.jpeg']),
+  'image/png': new Set(['.png']),
+  'image/gif': new Set(['.gif']),
+  'image/webp': new Set(['.webp']),
+  'application/pdf': new Set(['.pdf']),
+  'application/msword': new Set(['.doc']),
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': new Set(['.docx']),
+  'application/vnd.ms-excel': new Set(['.xls']),
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': new Set(['.xlsx']),
+  'application/vnd.ms-powerpoint': new Set(['.ppt']),
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': new Set(['.pptx']),
+  'application/zip': new Set(['.zip']),
+  'application/x-zip-compressed': new Set(['.zip']),
+  'application/x-rar-compressed': new Set(['.rar']),
+  'application/x-7z-compressed': new Set(['.7z'])
+}
+const taskEvidenceMimeTypes = new Set(Object.keys(taskEvidenceAllowedTypes))
 const taskEvidenceUpload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, callback) => {
@@ -75,23 +89,37 @@ const taskEvidenceUpload = multer({
       callback(null, taskEvidenceUploadDir)
     },
     filename: (_req, file, callback) => {
-      const ext = path.extname(file.originalname)
+      const ext = normalizeFileExtension(file.originalname)
       callback(null, `${Date.now()}-${randomUUID()}${ext}`)
     }
   }),
   limits: { fileSize: taskEvidenceMaxSize },
   fileFilter: (_req, file, callback) => {
-    if (taskEvidenceMimeTypes.has(file.mimetype)) {
+    const ext = normalizeFileExtension(file.originalname)
+    const allowedExtensions = taskEvidenceAllowedTypes[file.mimetype]
+    if (taskEvidenceMimeTypes.has(file.mimetype) && allowedExtensions?.has(ext)) {
       callback(null, true)
       return
     }
-    callback(new Error('仅支持图片、PDF、Office 文档和压缩包作为佐证材料'))
+    callback(
+      new Error('仅支持图片、PDF、Office 文档和压缩包作为佐证材料，且文件扩展名需与类型一致')
+    )
   }
 })
 
-interface JwtPayload {
+export interface JwtPayload {
   userId: number
   username: string
+}
+
+function normalizeFileExtension(filename: string): string {
+  return path.extname(filename).toLowerCase()
+}
+
+function isSafeStoredPath(filePath: string): boolean {
+  const resolved = path.resolve(filePath)
+  const uploadRoot = path.resolve(taskEvidenceUploadDir)
+  return resolved === uploadRoot || resolved.startsWith(`${uploadRoot}${path.sep}`)
 }
 
 function hasBodyKey(body: unknown, key: string): body is Record<string, unknown> {
@@ -100,8 +128,34 @@ function hasBodyKey(body: unknown, key: string): body is Record<string, unknown>
   )
 }
 
-app.use(cors({ origin: true, credentials: true }))
-app.use(express.json())
+function readStringArrayBody(body: unknown, key: string): string[] | undefined {
+  if (!hasBodyKey(body, key)) return undefined
+  const value = body[key]
+  if (!Array.isArray(value)) return []
+  return value.map((item) => String(item).trim()).filter(Boolean)
+}
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true)
+        return
+      }
+      if (!isProduction && corsOrigins.length === 0) {
+        callback(null, true)
+        return
+      }
+      if (corsOrigins.includes(origin)) {
+        callback(null, true)
+        return
+      }
+      callback(new Error('当前来源不允许访问医院考核 API'))
+    },
+    credentials: true
+  })
+)
+app.use(express.json({ limit: '1mb' }))
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -114,17 +168,21 @@ app.get('/api/health', (_req, res) => {
 app.post('/api/auth/login', async (req, res, next) => {
   try {
     const { userName, password } = req.body as { userName?: string; password?: string }
+    const username = userName?.trim() || ''
     if (!userName || !password) {
+      await writeLoginLog(req, null, username, 'failed', '请输入账号和密码')
       res.status(400).json({ code: 400, msg: '请输入账号和密码', data: null })
       return
     }
-    const user = await findUserByUsername(userName.trim())
+    const user = await findUserByUsername(username)
     if (!user || user.status !== 'active') {
+      await writeLoginLog(req, user?.id ?? null, username, 'failed', '账号不存在或已停用')
       res.status(401).json({ code: 401, msg: '账号不存在或已停用', data: null })
       return
     }
     const validPassword = await bcrypt.compare(password, user.passwordHash)
     if (!validPassword) {
+      await writeLoginLog(req, user.id, username, 'failed', '账号或密码错误')
       res.status(401).json({ code: 401, msg: '账号或密码错误', data: null })
       return
     }
@@ -134,6 +192,7 @@ app.post('/api/auth/login', async (req, res, next) => {
     const refreshToken = jwt.sign({ userId: user.id, username: user.username }, jwtSecret, {
       expiresIn: '7d'
     })
+    await writeLoginLog(req, user.id, username, 'success', '登录成功')
     res.json({ code: 200, msg: '登录成功', data: { token: `Bearer ${token}`, refreshToken } })
   } catch (error) {
     next(error)
@@ -163,6 +222,7 @@ app.get('/api/user/info', authMiddleware, async (req, res, next) => {
         position: user.position,
         mobile: user.mobile,
         elderlyFriendly: user.elderlyFriendly,
+        medicalRecordStages: user.medicalRecordStages,
         dataScope: permissions.dataScope,
         menuPermissions: permissions.menuPermissions
       }
@@ -193,7 +253,7 @@ app.post('/api/admin/users', authMiddleware, requireSuperAdmin, async (req, res,
       position,
       mobile,
       elderlyFriendly
-    } = req.body as Record<string, string | boolean>
+    } = req.body as Record<string, string | boolean | string[]>
     if (!username || !password || !displayName || !employeeNo || !email || !roleCode) {
       res
         .status(400)
@@ -210,7 +270,8 @@ app.post('/api/admin/users', authMiddleware, requireSuperAdmin, async (req, res,
       boardId: boardId ? String(boardId) : undefined,
       position: position ? String(position) : undefined,
       mobile: mobile ? String(mobile) : undefined,
-      elderlyFriendly: typeof elderlyFriendly === 'boolean' ? elderlyFriendly : undefined
+      elderlyFriendly: typeof elderlyFriendly === 'boolean' ? elderlyFriendly : undefined,
+      medicalRecordStages: readStringArrayBody(req.body, 'medicalRecordStages')
     })
     res.json({ code: 200, msg: '账号已创建', data: null })
   } catch (error) {
@@ -251,6 +312,7 @@ app.put(
         boardId: hasBodyKey(req.body, 'boardId') ? String(req.body.boardId) : undefined,
         position: hasBodyKey(req.body, 'position') ? String(req.body.position) : undefined,
         mobile: hasBodyKey(req.body, 'mobile') ? String(req.body.mobile) : undefined,
+        medicalRecordStages: readStringArrayBody(req.body, 'medicalRecordStages'),
         status:
           req.body.status === 'disabled'
             ? 'disabled'
@@ -266,6 +328,38 @@ app.put(
     }
   }
 )
+
+app.put(
+  '/api/admin/users/:id/password',
+  authMiddleware,
+  requireSuperAdmin,
+  async (req, res, next) => {
+    try {
+      const userId = Number(req.params.id)
+      const { password } = req.body as { password?: string }
+      if (!userId || !password) {
+        res.status(400).json({ code: 400, msg: '请输入新密码', data: null })
+        return
+      }
+      await resetAccountUserPassword(userId, password)
+      res.json({ code: 200, msg: '密码已重置', data: null })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
+app.get('/api/admin/login-logs', authMiddleware, requireSuperAdmin, async (req, res, next) => {
+  try {
+    res.json({
+      code: 200,
+      msg: 'ok',
+      data: await listLoginLogs(Number(req.query.limit || 200))
+    })
+  } catch (error) {
+    next(error)
+  }
+})
 
 app.get('/api/admin/roles', authMiddleware, requireSuperAdmin, async (_req, res, next) => {
   try {
@@ -322,7 +416,7 @@ app.put(
       res.json({
         code: 200,
         msg: '考核截止时间已更新',
-        data: await updateAssessmentCycle(req.params.id, req.body)
+        data: await updateAssessmentCycle(String(req.params.id), req.body)
       })
     } catch (error) {
       next(error)
@@ -344,7 +438,7 @@ app.put(
       res.json({
         code: 200,
         msg: '周期状态已更新',
-        data: await updateAssessmentCycleStatus(req.params.id, status)
+        data: await updateAssessmentCycleStatus(String(req.params.id), status)
       })
     } catch (error) {
       next(error)
@@ -370,7 +464,7 @@ app.put(
   requireSuperAdmin,
   async (req, res, next) => {
     try {
-      await updateAssessmentTemplate(req.params.id, req.body)
+      await updateAssessmentTemplate(String(req.params.id), req.body)
       res.json({ code: 200, msg: '考核模板已更新', data: null })
     } catch (error) {
       next(error)
@@ -404,13 +498,89 @@ app.put(
       res.json({
         code: 200,
         msg: '组织责任配置已更新',
-        data: await updateBoardResponsibilityConfig(req.auth!.userId, req.params.id, req.body)
+        data: await updateBoardResponsibilityConfig(
+          req.auth!.userId,
+          String(req.params.id),
+          req.body
+        )
       })
     } catch (error) {
       next(error)
     }
   }
 )
+
+app.get('/api/admin/staffing', authMiddleware, requireSuperAdmin, async (req, res, next) => {
+  try {
+    res.json({ code: 200, msg: 'ok', data: await listStaffingPositions(req.auth!.userId) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/admin/staffing/:id', authMiddleware, requireSuperAdmin, async (req, res, next) => {
+  try {
+    res.json({
+      code: 200,
+      msg: '定编定岗已更新',
+      data: await updateStaffingPosition(req.auth!.userId, String(req.params.id), req.body)
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/medical-records', authMiddleware, async (req, res, next) => {
+  try {
+    res.json({ code: 200, msg: 'ok', data: await listMedicalRecordCases(req.auth!.userId) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/medical-records/doctors', authMiddleware, async (req, res, next) => {
+  try {
+    res.json({ code: 200, msg: 'ok', data: await listMedicalRecordDoctors(req.auth!.userId) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/medical-records', authMiddleware, async (req, res, next) => {
+  try {
+    res.json({
+      code: 200,
+      msg: '病历已创建',
+      data: await createMedicalRecordCase(req.auth!.userId, req.body)
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/medical-records/:id', authMiddleware, async (req, res, next) => {
+  try {
+    res.json({
+      code: 200,
+      msg: 'ok',
+      data: await getMedicalRecordCase(req.auth!.userId, Number(req.params.id))
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/medical-records/:id', authMiddleware, async (req, res, next) => {
+  try {
+    res.json({
+      code: 200,
+      msg: '病历已保存',
+      data: await updateMedicalRecordCase(req.auth!.userId, Number(req.params.id), req.body)
+    })
+  } catch (error) {
+    next(error)
+  }
+})
 
 app.get('/api/assessment/bootstrap', authMiddleware, async (req, res, next) => {
   try {
@@ -512,11 +682,15 @@ app.get('/api/assessment/tasks/evidence/:id/download', authMiddleware, async (re
       req.auth!.userId,
       Number(req.params.id)
     )
+    if (!isSafeStoredPath(attachment.filePath)) {
+      res.status(403).json({ code: 403, msg: '佐证材料路径不合法', data: null })
+      return
+    }
     if (!fs.existsSync(attachment.filePath)) {
       res.status(404).json({ code: 404, msg: '佐证材料文件不存在', data: null })
       return
     }
-    res.download(attachment.filePath, attachment.originalName)
+    res.download(attachment.filePath, path.basename(attachment.originalName))
   } catch (error) {
     next(error)
   }
@@ -588,6 +762,7 @@ app.post('/api/assessment/performance/confirm', authMiddleware, async (req, res,
 app.post(
   '/api/assessment/performance/manager-confirm/:userId',
   authMiddleware,
+  requireAnyActionPermission(['review:board', 'review:all']),
   async (req, res, next) => {
     try {
       const { comment } = req.body as { comment?: string }
@@ -595,6 +770,32 @@ app.post(
         code: 200,
         msg: '负责人确认已完成',
         data: await managerConfirmPerformance(req.auth!.userId, Number(req.params.userId), comment)
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
+app.post(
+  '/api/assessment/performance/review-group-confirm/:userId',
+  authMiddleware,
+  requireAnyActionPermission(['review:all']),
+  async (req, res, next) => {
+    try {
+      const { comment, leaderFinalScore, leaderScoreComment } = req.body as {
+        comment?: string
+        leaderFinalScore?: number
+        leaderScoreComment?: string
+      }
+      res.json({
+        code: 200,
+        msg: '考核小组复核已完成',
+        data: await reviewGroupConfirmPerformance(req.auth!.userId, Number(req.params.userId), {
+          comment,
+          leaderFinalScore,
+          leaderScoreComment
+        })
       })
     } catch (error) {
       next(error)
@@ -610,36 +811,63 @@ app.get('/api/assessment/manager/tasks', authMiddleware, async (req, res, next) 
   }
 })
 
-app.post('/api/assessment/manager/tasks', authMiddleware, async (req, res, next) => {
-  try {
-    res.json({
-      code: 200,
-      msg: '分管工作已保存为草稿',
-      data: await createManagedBoardTask(req.auth!.userId, req.body)
-    })
-  } catch (error) {
-    next(error)
+app.post(
+  '/api/assessment/manager/tasks',
+  authMiddleware,
+  requireAnyActionPermission(['review:board', 'review:all']),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.json({
+        code: 200,
+        msg: '分管工作已保存为草稿',
+        data: await createManagedBoardTask(req.auth!.userId, req.body)
+      })
+    } catch (error) {
+      next(error)
+    }
   }
-})
+)
 
-app.put('/api/assessment/manager/tasks/:id', authMiddleware, async (req, res, next) => {
-  try {
-    res.json({
-      code: 200,
-      msg: '分管工作已更新',
-      data: await updateManagedBoardTask(req.auth!.userId, req.params.id, req.body)
-    })
-  } catch (error) {
-    next(error)
+app.put(
+  '/api/assessment/manager/tasks/:id',
+  authMiddleware,
+  requireAnyActionPermission(['review:board', 'review:all']),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.json({
+        code: 200,
+        msg: '分管工作已更新',
+        data: await updateManagedBoardTask(req.auth!.userId, String(req.params.id), req.body)
+      })
+    } catch (error) {
+      next(error)
+    }
   }
-})
+)
 
-app.post('/api/assessment/manager/tasks/:id/publish', authMiddleware, async (req, res, next) => {
+app.post(
+  '/api/assessment/manager/tasks/:id/publish',
+  authMiddleware,
+  requireAnyActionPermission(['review:board', 'review:all']),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.json({
+        code: 200,
+        msg: '分管工作已推送',
+        data: await publishManagedBoardTask(req.auth!.userId, String(req.params.id))
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
+app.put('/api/assessment/rectifications/:id', authMiddleware, async (req, res, next) => {
   try {
     res.json({
       code: 200,
-      msg: '分管工作已推送',
-      data: await publishManagedBoardTask(req.auth!.userId, req.params.id)
+      msg: '整改闭环信息已更新',
+      data: await updateRectification(req.auth!.userId, Number(req.params.id), req.body)
     })
   } catch (error) {
     next(error)
@@ -683,12 +911,57 @@ async function requireSuperAdmin(req: Request, res: Response, next: NextFunction
   next()
 }
 
+function requireAnyActionPermission(actionPermissions: string[]): RequestHandler {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const userId = req.auth?.userId
+    if (!userId) {
+      res.status(401).json({ code: 401, msg: '未登录或登录已过期', data: null })
+      return
+    }
+    const permissions = await getUserPermissions(userId)
+    const allowed =
+      permissions.roleCode === 'R_SUPER' ||
+      actionPermissions.some((permission) => permissions.actionPermissions.includes(permission))
+    if (!allowed) {
+      res.status(403).json({ code: 403, msg: '无权执行此操作', data: null })
+      return
+    }
+    next()
+  }
+}
+
+async function writeLoginLog(
+  req: Request,
+  userId: number | null,
+  username: string,
+  status: 'success' | 'failed',
+  message: string
+): Promise<void> {
+  try {
+    await recordLoginLog({
+      userId,
+      username,
+      status,
+      message,
+      ipAddress: req.ip || '',
+      userAgent: req.get('user-agent') || ''
+    })
+  } catch (error) {
+    console.error('[Hospital API] 登录日志写入失败:', error)
+  }
+}
+
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   void _next
   console.error('[Hospital API] 服务异常:', error)
-  res.status(500).json({
-    code: 500,
-    msg: error instanceof Error ? error.message : '服务异常，请稍后重试',
+  const message = error instanceof Error ? error.message : '服务异常，请稍后重试'
+  const statusCode =
+    /SQL|syntax|constraint|database|prepare|bind/i.test(message) || !(error instanceof Error)
+      ? 500
+      : 400
+  res.status(statusCode).json({
+    code: statusCode,
+    msg: message,
     data: null
   })
 })
@@ -697,11 +970,5 @@ await getDatabase()
 
 app.listen(port, () => {
   console.log(`Hospital assessment API is running at http://localhost:${port}`)
-  console.log('Default super admin: admin / admin123')
+  if (!isProduction) console.log('Default super admin: admin / admin123')
 })
-
-declare module 'express-serve-static-core' {
-  interface Request {
-    auth?: JwtPayload
-  }
-}

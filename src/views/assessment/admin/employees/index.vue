@@ -82,6 +82,11 @@
         <ElTableColumn prop="position" label="岗位" min-width="130">
           <template #default="scope">{{ scope.row.position || '-' }}</template>
         </ElTableColumn>
+        <ElTableColumn label="病历权限" min-width="180" show-overflow-tooltip>
+          <template #default="scope">
+            {{ stageText(scope.row.medicalRecordStages) || '未绑定' }}
+          </template>
+        </ElTableColumn>
         <ElTableColumn prop="mobile" label="手机号" width="140">
           <template #default="scope">{{ scope.row.mobile || '-' }}</template>
         </ElTableColumn>
@@ -135,11 +140,15 @@
       width="640px"
     >
       <ElForm :model="profileForm" label-width="96px">
-        <ElFormItem v-if="!editingUserId" label="登录账号" required>
+        <ElFormItem label="登录账号" required>
           <ElInput v-model="profileForm.username" placeholder="请输入登录账号" />
         </ElFormItem>
-        <ElFormItem v-if="!editingUserId" label="初始密码" required>
-          <ElInput v-model="profileForm.password" placeholder="请输入初始密码" show-password />
+        <ElFormItem :label="editingUserId ? '新密码' : '初始密码'" :required="!editingUserId">
+          <ElInput
+            v-model="profileForm.password"
+            :placeholder="editingUserId ? '不填写则保持原密码' : '请输入初始密码'"
+            show-password
+          />
         </ElFormItem>
         <ElFormItem label="姓名" required>
           <ElInput v-model="profileForm.displayName" placeholder="请输入员工姓名" />
@@ -166,7 +175,25 @@
         <ElFormItem label="岗位">
           <ElInput v-model="profileForm.position" placeholder="如：护士、医师、收费员" />
         </ElFormItem>
-        <ElFormItem v-if="!editingUserId" label="系统权限">
+        <ElFormItem label="病历权限">
+          <ElSelect
+            v-model="profileForm.medicalRecordStages"
+            multiple
+            clearable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="选择该账号可填写的病历区域；不参与可留空"
+            style="width: 100%"
+          >
+            <ElOption
+              v-for="stage in medicalRecordStageOptions"
+              :key="stage.value"
+              :label="stage.label"
+              :value="stage.value"
+            />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="系统权限">
           <ElSelect v-model="profileForm.roleCode" style="width: 100%">
             <ElOption
               v-for="grant in enabledRoleGrants"
@@ -176,7 +203,7 @@
             />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem v-else label="账号状态">
+        <ElFormItem v-if="editingUserId" label="账号状态">
           <ElRadioGroup v-model="profileForm.status">
             <ElRadioButton label="active">启用</ElRadioButton>
             <ElRadioButton label="disabled">停用</ElRadioButton>
@@ -187,6 +214,9 @@
         </ElFormItem>
       </ElForm>
       <template #footer>
+        <ElButton v-if="editingUserId" :loading="saving" @click="resetPassword">
+          重置密码
+        </ElButton>
         <ElButton @click="profileDialogVisible = false">取消</ElButton>
         <ElButton type="primary" :loading="saving" @click="saveProfile">保存</ElButton>
       </template>
@@ -196,17 +226,19 @@
 
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
-  import { ElMessage } from 'element-plus'
+  import { ElMessage, ElMessageBox } from 'element-plus'
   import {
     createAccountUser,
     fetchAccountUsers,
     fetchRoleGrants,
+    resetAccountUserPassword,
     updateAccountUserProfile,
     updateAccountUserRole,
     type AccountUserItem
   } from '@/api/assessment-admin'
   import { boards } from '@/data/assessmentData'
   import type { BoardId, PermissionGrant } from '@/types/assessment'
+  import { medicalRecordStageOptions, type MedicalRecordStageKey } from '@/types/medicalRecord'
 
   const loading = ref(false)
   const saving = ref(false)
@@ -230,6 +262,7 @@
     roleCode: 'R_EMPLOYEE',
     boardId: 'medical',
     position: '',
+    medicalRecordStages: [] as MedicalRecordStageKey[],
     mobile: '',
     status: 'active' as 'active' | 'disabled',
     elderlyFriendly: true
@@ -284,6 +317,7 @@
       roleCode: user.roleCode,
       boardId: user.boardId,
       position: user.position || '',
+      medicalRecordStages: [...(user.medicalRecordStages || [])],
       mobile: user.mobile || '',
       status: user.status,
       elderlyFriendly: user.elderlyFriendly
@@ -296,20 +330,25 @@
       !profileForm.displayName ||
       !profileForm.employeeNo ||
       !profileForm.email ||
-      !profileForm.boardId
+      !profileForm.boardId ||
+      !profileForm.username
     ) {
-      ElMessage.warning('请完整填写姓名、工号、邮箱和所属板块')
+      ElMessage.warning('请完整填写登录账号、姓名、工号、邮箱和所属板块')
       return
     }
     saving.value = true
     try {
       if (editingUserId.value) {
         await updateAccountUserProfile(editingUserId.value, {
+          username: profileForm.username,
+          password: profileForm.password || undefined,
           displayName: profileForm.displayName,
           employeeNo: profileForm.employeeNo,
           email: profileForm.email,
+          roleCode: profileForm.roleCode,
           boardId: profileForm.boardId,
           position: profileForm.position,
+          medicalRecordStages: profileForm.medicalRecordStages,
           mobile: profileForm.mobile,
           status: profileForm.status,
           elderlyFriendly: profileForm.elderlyFriendly
@@ -328,12 +367,34 @@
           roleCode: profileForm.roleCode || 'R_EMPLOYEE',
           boardId: profileForm.boardId,
           position: profileForm.position,
+          medicalRecordStages: profileForm.medicalRecordStages,
           mobile: profileForm.mobile,
           elderlyFriendly: profileForm.elderlyFriendly
         })
       }
       profileDialogVisible.value = false
       await loadUsers()
+    } finally {
+      saving.value = false
+    }
+  }
+
+  async function resetPassword() {
+    if (!editingUserId.value) return
+    const nextPassword = profileForm.password || `${profileForm.employeeNo}@123456`
+    try {
+      await ElMessageBox.confirm(
+        `确定将 ${profileForm.displayName} 的密码重置为：${nextPassword}？`,
+        '重置密码',
+        { type: 'warning' }
+      )
+    } catch {
+      return
+    }
+    saving.value = true
+    try {
+      await resetAccountUserPassword(editingUserId.value, nextPassword)
+      profileForm.password = ''
     } finally {
       saving.value = false
     }
@@ -355,6 +416,7 @@
       roleCode: 'R_EMPLOYEE',
       boardId: 'medical',
       position: '',
+      medicalRecordStages: [],
       mobile: '',
       status: 'active',
       elderlyFriendly: true
@@ -370,6 +432,13 @@
     if (roleCode === 'R_LEADER') return 'warning'
     if (roleCode === 'R_MANAGER') return 'primary'
     return 'info'
+  }
+
+  function stageText(stages: string[] = []) {
+    return stages
+      .map((stage) => medicalRecordStageOptions.find((option) => option.value === stage)?.label)
+      .filter(Boolean)
+      .join('、')
   }
 
   function formatTime(value?: string) {

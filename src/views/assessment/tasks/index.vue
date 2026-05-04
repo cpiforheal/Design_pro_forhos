@@ -2,7 +2,7 @@
   <div class="assessment-page">
     <el-card class="intro-card">
       <h2>本周任务</h2>
-      <p>保留原系统医院安排与分管负责人安排两类任务，支持三态流转和备注。</p>
+      <p>保留医院安排与分管负责人安排两类任务。新任务默认未完成，处理后点击按钮标记为已完成。</p>
     </el-card>
     <el-card>
       <el-table
@@ -23,7 +23,7 @@
               :type="buttonType(resolveDraft(row).status)"
               @click="toggleTask(row.id, row.source === '医院安排' ? 'hospital' : 'board')"
             >
-              {{ getStatusLabel(resolveDraft(row).status) }}
+              {{ taskActionText(resolveDraft(row).status) }}
             </el-button>
           </template>
         </el-table-column>
@@ -49,14 +49,8 @@
 
   const route = useRoute()
   const taskTableRef = ref()
-  const {
-    currentTasks,
-    hospitalTaskDrafts,
-    boardTaskDrafts,
-    toggleTask,
-    persistTask,
-    getStatusLabel
-  } = useAssessmentPlatform()
+  const { currentTasks, hospitalTaskDrafts, boardTaskDrafts, toggleTask, persistTask } =
+    useAssessmentPlatform()
 
   watch(
     () => route.query.taskId,
@@ -79,6 +73,10 @@
     if (status === 'pending') return 'danger'
     if (status === 'na') return 'info'
     return 'success'
+  }
+
+  function taskActionText(status?: AssessmentStatus) {
+    return status === 'completed' ? '改为未完成' : '标记完成'
   }
 
   function getRowClassName({ row }: { row: TaskItem }) {

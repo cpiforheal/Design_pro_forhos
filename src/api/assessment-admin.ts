@@ -6,6 +6,8 @@ import type {
   BoardResponsibilityConfig,
   PermissionGrant,
   RoleGrantUpdatePayload,
+  StaffingPosition,
+  StaffingPositionUpdatePayload,
   TemplateUpdatePayload
 } from '@/types/assessment'
 
@@ -23,7 +25,23 @@ export interface AccountUserItem {
   position: string
   mobile: string
   elderlyFriendly: boolean
+  medicalRecordStages: string[]
   updatedAt: string
+}
+
+export interface LoginLogItem {
+  id: number
+  userId: number | null
+  username: string
+  displayName: string
+  employeeNo: string
+  roleName: string
+  boardName: string
+  status: 'success' | 'failed'
+  message: string
+  ipAddress: string
+  userAgent: string
+  loggedAt: string
 }
 
 export interface CreateAccountParams {
@@ -37,9 +55,13 @@ export interface CreateAccountParams {
   position?: string
   mobile?: string
   elderlyFriendly?: boolean
+  medicalRecordStages?: string[]
 }
 
 export interface UpdateAccountProfileParams {
+  username?: string
+  password?: string
+  roleCode?: string
   displayName?: string
   employeeNo?: string
   email?: string
@@ -48,6 +70,7 @@ export interface UpdateAccountProfileParams {
   position?: string
   mobile?: string
   elderlyFriendly?: boolean
+  medicalRecordStages?: string[]
 }
 
 export function fetchAccountUsers() {
@@ -77,6 +100,21 @@ export function updateAccountUserProfile(userId: number, params: UpdateAccountPr
     url: `/api/admin/users/${userId}/profile`,
     params,
     showSuccessMessage: true
+  })
+}
+
+export function resetAccountUserPassword(userId: number, password: string) {
+  return request.put<null>({
+    url: `/api/admin/users/${userId}/password`,
+    params: { password },
+    showSuccessMessage: true
+  })
+}
+
+export function fetchLoginLogs(limit = 200) {
+  return request.get<LoginLogItem[]>({
+    url: '/api/admin/login-logs',
+    params: { limit }
   })
 }
 
@@ -146,6 +184,18 @@ export function updateBoardResponsibilityConfig(
 ) {
   return request.put<BoardResponsibilityConfig[]>({
     url: `/api/admin/organization/boards/${boardId}`,
+    params,
+    showSuccessMessage: true
+  })
+}
+
+export function fetchStaffingPositions() {
+  return request.get<StaffingPosition[]>({ url: '/api/admin/staffing' })
+}
+
+export function updateStaffingPosition(id: string, params: StaffingPositionUpdatePayload) {
+  return request.put<StaffingPosition[]>({
+    url: `/api/admin/staffing/${id}`,
     params,
     showSuccessMessage: true
   })

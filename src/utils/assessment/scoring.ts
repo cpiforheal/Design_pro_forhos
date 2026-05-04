@@ -4,7 +4,7 @@
   RectificationItem,
   ScoreSummary,
   TaskDraft,
-  TaskItem,
+  TaskItem
 } from '@/types/assessment'
 
 const REDLINE_PENALTY = 12
@@ -13,25 +13,29 @@ export function createDefaultEvaluationDraft(): EvaluationDraft {
   return {
     status: 'completed',
     remark: '',
-    rectification: '',
+    rectification: ''
   }
 }
 
 export function createDefaultTaskDraft(): TaskDraft {
   return {
-    status: 'completed',
-    remark: '',
+    status: 'pending',
+    remark: ''
   }
 }
 
 export function calculateScoreSummary(
   items: AssessmentItem[],
   drafts: Record<string, EvaluationDraft>,
-  redlineTriggered: boolean,
+  redlineTriggered: boolean
 ): ScoreSummary {
   const applicableItems = items.filter((item) => drafts[item.id]?.status !== 'na')
-  const completedCount = applicableItems.filter((item) => drafts[item.id]?.status === 'completed').length
-  const pendingCount = applicableItems.filter((item) => drafts[item.id]?.status === 'pending').length
+  const completedCount = applicableItems.filter(
+    (item) => drafts[item.id]?.status === 'completed'
+  ).length
+  const pendingCount = applicableItems.filter(
+    (item) => drafts[item.id]?.status === 'pending'
+  ).length
   const totalApplicable = applicableItems.length
   const completionRate = totalApplicable === 0 ? 0 : completedCount / totalApplicable
   const dailyScore = completedCount
@@ -45,7 +49,7 @@ export function calculateScoreSummary(
     completionRate,
     dailyScore,
     redlinePenalty,
-    finalScore,
+    finalScore
   }
 }
 
@@ -53,7 +57,7 @@ export function buildRectificationItems(
   items: AssessmentItem[],
   drafts: Record<string, EvaluationDraft>,
   assignee: string,
-  boardNameMap: Record<string, string>,
+  boardNameMap: Record<string, string>
 ): RectificationItem[] {
   return items
     .filter((item) => drafts[item.id]?.status === 'pending')
@@ -64,7 +68,7 @@ export function buildRectificationItems(
       description: item.title,
       owner: assignee,
       rectification: drafts[item.id]?.rectification || '待补充整改措施',
-      status: drafts[item.id]?.rectification ? '整改中' : '待整改',
+      status: drafts[item.id]?.rectification ? '整改中' : '待整改'
     }))
 }
 

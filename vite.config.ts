@@ -15,6 +15,7 @@ export default ({ mode }: { mode: string }) => {
   const root = process.cwd()
   const env = loadEnv(mode, root)
   const { VITE_VERSION, VITE_PORT, VITE_BASE_URL, VITE_API_URL, VITE_API_PROXY_URL } = env
+  const apiProxyTarget = VITE_API_PROXY_URL || 'http://localhost:3010'
 
   console.log(`🚀 API_URL = ${VITE_API_URL}`)
   console.log(`🚀 VERSION = ${VITE_VERSION}`)
@@ -28,11 +29,19 @@ export default ({ mode }: { mode: string }) => {
       port: Number(VITE_PORT),
       proxy: {
         '/api': {
-          target: VITE_API_PROXY_URL,
+          target: apiProxyTarget,
           changeOrigin: true
         }
       },
       host: true
+    },
+    preview: {
+      proxy: {
+        '/api': {
+          target: apiProxyTarget,
+          changeOrigin: true
+        }
+      }
     },
     // 路径别名
     resolve: {

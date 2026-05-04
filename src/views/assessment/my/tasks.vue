@@ -4,11 +4,21 @@
     :class="{ 'is-elderly-friendly': currentEmployee.elderlyFriendly }"
   >
     <ElCard class="intro-card" shadow="never">
-      <h2>我的任务</h2>
+      <h2>我的待办</h2>
       <p
-        >新推送的任务默认是未完成。处理完后点击“标记为已完成”，逾期任务需要负责人延期后才能提交。</p
+        >全员通用、岗位专项和推送任务集中在这里处理。考核项按完成情况确认，任务完成前必须上传佐证材料。</p
       >
     </ElCard>
+
+    <ElAlert
+      v-if="pendingAssessmentItems.length"
+      class="page-alert"
+      type="warning"
+      show-icon
+      :closable="false"
+      :title="`有 ${pendingAssessmentItems.length} 项考核待确认`"
+      description="请逐项确认完成情况；未完成时补充整改措施。"
+    />
 
     <ElAlert
       v-if="pendingTasks.length"
@@ -30,13 +40,99 @@
       description="请联系负责人在任务管理中延期，延期后本页会自动恢复可提交状态。"
     />
 
+    <ElCard class="filter-card" shadow="never">
+      <div class="filter-head">
+        <div>
+          <strong>任务类型筛选</strong>
+          <p>只看当前要处理的一类事项，减少页面干扰。</p>
+        </div>
+        <ElTag type="info" effect="plain">当前 {{ visibleTodoCount }} 项</ElTag>
+      </div>
+      <ElRadioGroup v-model="activeFilter" class="filter-group">
+        <ElRadioButton v-for="filter in taskFilters" :key="filter.value" :value="filter.value">
+          {{ filter.label }} {{ filter.count }}
+        </ElRadioButton>
+      </ElRadioGroup>
+    </ElCard>
+
     <div class="task-grid">
       <ElCard
-        v-for="task in currentTasks"
+        v-for="item in visibleAssessmentCards"
+        :id="`assessment-${item.id}`"
+        :key="item.id"
+        class="task-card assessment-card"
+        :class="[
+          { 'is-target': route.query.assessmentId === item.id },
+          `source-${resolveAssessmentScope(item)}`
+        ]"
+        shadow="never"
+      >
+        <div class="task-head">
+          <ElTag :type="assessmentTagType(item)" effect="light">
+            {{
+              item.isRedline ? '红线考核' : item.boardId === 'allStaff' ? '全员通用' : '岗位专项'
+            }}
+          </ElTag>
+          <ElTag :type="statusType(resolveAssessmentStatus(item))">
+            {{ getStatusLabel(resolveAssessmentStatus(item)) }}
+          </ElTag>
+        </div>
+        <h3>{{ item.title }}</h3>
+        <div class="meta-list">
+          <p><span>模块</span>{{ item.moduleName }}</p>
+          <p><span>标准</span>{{ item.standard }}</p>
+        </div>
+        <div class="evidence-box">
+          <div class="evidence-title">
+            <span>处理说明</span>
+            <ElTag size="small" type="info">未完成时填写整改</ElTag>
+          </div>
+          <ElInput
+            :model-value="resolveAssessmentDraft(item).rectification"
+            placeholder="未完成时填写整改措施"
+            :disabled="isAssessmentLocked(item)"
+            @input="updateAssessmentText(item, 'rectification', String($event))"
+            @blur="persistAssessment(item.id, resolveAssessmentScope(item))"
+          />
+          <ElInput
+            :model-value="resolveAssessmentDraft(item).remark"
+            type="textarea"
+            :rows="2"
+            maxlength="200"
+            show-word-limit
+            placeholder="备注：可补充完成情况、时间或说明"
+            :disabled="isAssessmentLocked(item)"
+            @input="updateAssessmentText(item, 'remark', String($event))"
+            @blur="persistAssessment(item.id, resolveAssessmentScope(item))"
+          />
+        </div>
+        <div class="card-actions">
+          <span class="status-hint">{{
+            workflowHint(resolveAssessmentDraft(item).workflowStatus)
+          }}</span>
+          <ElButton
+            type="primary"
+            plain
+            :disabled="isAssessmentLocked(item)"
+            @click="toggleAssessment(item.id, resolveAssessmentScope(item))"
+          >
+            {{ actionText(resolveAssessmentStatus(item)) }}
+          </ElButton>
+        </div>
+      </ElCard>
+
+      <ElCard
+        v-for="task in visibleTasks"
         :id="`task-${task.id}`"
         :key="task.id"
         class="task-card"
-        :class="{ 'is-target': route.query.taskId === task.id, 'is-overdue': task.overdueLocked }"
+        :class="[
+          {
+            'is-target': route.query.taskId === task.id,
+            'is-overdue': task.overdueLocked
+          },
+          task.source === '医院安排' ? 'source-hospital' : 'source-manager'
+        ]"
         shadow="never"
       >
         <div class="task-head">
@@ -47,9 +143,11 @@
           <ElTag v-else-if="isNearDeadline(task)" type="warning">临近截止</ElTag>
         </div>
         <h3>{{ task.title }}</h3>
-        <p>责任人：{{ task.owner }}</p>
-        <p>截止时间：{{ task.deadlineAt || task.deadline }}</p>
-        <p v-if="task.taskCategory">任务分类：{{ task.taskCategory }}</p>
+        <div class="meta-list">
+          <p><span>责任人</span>{{ task.owner }}</p>
+          <p><span>截止</span>{{ task.deadlineAt || task.deadline }}</p>
+          <p v-if="task.taskCategory"><span>分类</span>{{ task.taskCategory }}</p>
+        </div>
         <div class="evidence-box">
           <div class="evidence-title">
             <span>完成佐证</span>
@@ -124,48 +222,160 @@
         </div>
       </ElCard>
     </div>
+
+    <ElEmpty v-if="!visibleTodoCount" class="empty-card" description="当前筛选下没有待办事项" />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { computed, nextTick, watch } from 'vue'
+  import { computed, nextTick, ref, watch } from 'vue'
   import { useRoute } from 'vue-router'
   import { ElMessage } from 'element-plus'
   import { useAssessmentPlatform } from '@/composables/useAssessmentPlatform'
   import type { UploadRequestOptions } from 'element-plus'
-  import type { AssessmentStatus, TaskItem, TaskRecordDraft } from '@/types/assessment'
+  import type {
+    AssessmentItem,
+    AssessmentRecordDraft,
+    AssessmentStatus,
+    TaskItem,
+    TaskRecordDraft
+  } from '@/types/assessment'
 
   const route = useRoute()
+  type TaskFilter = 'all' | 'pending' | 'common' | 'board' | 'hospital' | 'manager'
+  const activeFilter = ref<TaskFilter>('all')
   const {
     currentEmployee,
+    commonAssessmentItems,
+    currentBoardItems,
     currentTasks,
+    commonDrafts,
+    boardDrafts,
     hospitalTaskDrafts,
     boardTaskDrafts,
     loading,
+    toggleAssessment,
+    persistAssessment,
     toggleTask,
     persistTask,
     uploadTaskAttachment,
     removeTaskAttachment,
     downloadTaskAttachment,
+    updateAssessmentDraftField,
     updateTaskDraftField,
     getStatusLabel
   } = useAssessmentPlatform()
+  const currentAssessmentCards = computed(() => [
+    ...commonAssessmentItems.value,
+    ...currentBoardItems.value
+  ])
+  const visibleAssessmentCards = computed(() =>
+    currentAssessmentCards.value.filter((item) => matchAssessmentFilter(item))
+  )
+  const visibleTasks = computed(() => currentTasks.value.filter((task) => matchTaskFilter(task)))
+  const visibleTodoCount = computed(
+    () => visibleAssessmentCards.value.length + visibleTasks.value.length
+  )
+  const pendingAssessmentItems = computed(() =>
+    currentAssessmentCards.value.filter((item) => resolveAssessmentStatus(item) === 'pending')
+  )
   const overdueTasks = computed(() => currentTasks.value.filter((task) => task.overdueLocked))
   const pendingTasks = computed(() =>
     currentTasks.value.filter((task) => resolveStatus(task) === 'pending')
   )
+  const taskFilters = computed<Array<{ label: string; value: TaskFilter; count: number }>>(() => [
+    {
+      label: '全部',
+      value: 'all',
+      count: currentAssessmentCards.value.length + currentTasks.value.length
+    },
+    {
+      label: '待处理',
+      value: 'pending',
+      count: pendingAssessmentItems.value.length + pendingTasks.value.length
+    },
+    { label: '全员通用', value: 'common', count: commonAssessmentItems.value.length },
+    { label: '板块考核', value: 'board', count: currentBoardItems.value.length },
+    {
+      label: '医院安排',
+      value: 'hospital',
+      count: currentTasks.value.filter((task) => task.source === '医院安排').length
+    },
+    {
+      label: '负责人安排',
+      value: 'manager',
+      count: currentTasks.value.filter((task) => task.source !== '医院安排').length
+    }
+  ])
 
   watch(
-    () => route.query.taskId,
-    async (taskId) => {
-      if (!taskId) return
+    () => [route.query.taskId, route.query.assessmentId],
+    async ([taskId, assessmentId]) => {
+      if (!taskId && !assessmentId) return
       await nextTick()
-      document
-        .getElementById(`task-${taskId}`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const targetId = assessmentId ? `assessment-${assessmentId}` : `task-${taskId}`
+      document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     },
     { immediate: true }
   )
+
+  function resolveAssessmentScope(item: AssessmentItem) {
+    return item.boardId === 'allStaff' ? 'common' : 'board'
+  }
+
+  function matchAssessmentFilter(item: AssessmentItem) {
+    if (activeFilter.value === 'all') return true
+    if (activeFilter.value === 'pending') return resolveAssessmentStatus(item) === 'pending'
+    if (activeFilter.value === 'common') return resolveAssessmentScope(item) === 'common'
+    if (activeFilter.value === 'board') return resolveAssessmentScope(item) === 'board'
+    return false
+  }
+
+  function matchTaskFilter(task: TaskItem) {
+    if (activeFilter.value === 'all') return true
+    if (activeFilter.value === 'pending') return resolveStatus(task) === 'pending'
+    if (activeFilter.value === 'hospital') return task.source === '医院安排'
+    if (activeFilter.value === 'manager') return task.source !== '医院安排'
+    return false
+  }
+
+  function resolveAssessmentDraft(item: AssessmentItem): AssessmentRecordDraft {
+    return resolveAssessmentScope(item) === 'common'
+      ? commonDrafts.value[item.id]
+      : boardDrafts.value[item.id]
+  }
+
+  function resolveAssessmentStatus(item: AssessmentItem): AssessmentStatus {
+    return resolveAssessmentDraft(item)?.status ?? 'completed'
+  }
+
+  function updateAssessmentText(
+    item: AssessmentItem,
+    field: 'rectification' | 'remark',
+    value: string
+  ) {
+    updateAssessmentDraftField(item.id, resolveAssessmentScope(item), field, value)
+  }
+
+  function isAssessmentLocked(item: AssessmentItem) {
+    const workflowStatus = resolveAssessmentDraft(item)?.workflowStatus
+    return (
+      workflowStatus === 'submitted' || workflowStatus === 'approved' || workflowStatus === 'closed'
+    )
+  }
+
+  function assessmentTagType(item: AssessmentItem) {
+    if (item.isRedline) return 'danger'
+    return item.boardId === 'allStaff' ? 'success' : 'info'
+  }
+
+  function workflowHint(status?: string) {
+    if (status === 'submitted') return '已提交，等待负责人审核'
+    if (status === 'returned') return '已退回，请补充后重新提交'
+    if (status === 'rectifying') return '整改中'
+    if (status === 'approved' || status === 'closed') return '已通过审核'
+    return '未提交前可随时调整'
+  }
 
   function resolveStatus(task: TaskItem): AssessmentStatus {
     return resolveDraft(task).status ?? 'pending'
@@ -266,12 +476,14 @@
   }
 
   .intro-card,
+  .filter-card,
   .task-card {
     border: 0;
     border-radius: 12px;
   }
 
   .intro-card,
+  .filter-card,
   .page-alert {
     margin-bottom: 16px;
   }
@@ -287,9 +499,45 @@
     }
   }
 
+  .filter-card {
+    background: linear-gradient(135deg, #fff, #f8fafc);
+
+    :deep(.el-card__body) {
+      display: grid;
+      gap: 14px;
+    }
+  }
+
+  .filter-head {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+
+    strong {
+      color: #0f172a;
+    }
+
+    p {
+      margin: 4px 0 0;
+      color: #64748b;
+    }
+  }
+
+  .filter-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+
+    :deep(.el-radio-button__inner) {
+      border-left: var(--el-border);
+      border-radius: 999px;
+    }
+  }
+
   .task-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 14px;
   }
 
@@ -300,14 +548,43 @@
   }
 
   .task-card {
+    position: relative;
+    overflow: hidden;
+
+    &::before {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      content: '';
+      background: #cbd5e1;
+    }
+
     h3 {
       margin: 12px 0 8px;
+      line-height: 1.45;
       color: #0f172a;
     }
 
     p {
+      margin: 0;
       color: #64748b;
     }
+  }
+
+  .source-common::before {
+    background: var(--el-color-success);
+  }
+
+  .source-board::before {
+    background: var(--el-color-info);
+  }
+
+  .source-hospital::before {
+    background: var(--el-color-primary);
+  }
+
+  .source-manager::before {
+    background: var(--el-color-warning);
   }
 
   .task-card.is-target {
@@ -317,6 +594,27 @@
 
   .task-card.is-overdue {
     background: #fff7f7;
+  }
+
+  .assessment-card {
+    background: linear-gradient(180deg, #fff, #f8fafc);
+  }
+
+  .meta-list {
+    display: grid;
+    gap: 7px;
+    padding: 10px 0 2px;
+
+    p {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 8px;
+      line-height: 1.55;
+    }
+
+    span {
+      color: #94a3b8;
+    }
   }
 
   .evidence-box {
@@ -368,6 +666,18 @@
     margin-top: 16px;
   }
 
+  .status-hint {
+    font-size: 13px;
+    color: #64748b;
+  }
+
+  .empty-card {
+    padding: 36px 0;
+    margin-top: 12px;
+    background: #fff;
+    border-radius: 12px;
+  }
+
   .is-elderly-friendly {
     font-size: 17px;
 
@@ -378,6 +688,14 @@
   }
 
   @media (width <= 768px) {
+    .filter-head {
+      align-items: flex-start;
+    }
+
+    .task-grid {
+      grid-template-columns: 1fr;
+    }
+
     .card-actions {
       flex-direction: column;
       align-items: stretch;

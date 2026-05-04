@@ -42,6 +42,13 @@
             </ElTag>
           </template>
         </ElTableColumn>
+        <ElTableColumn label="考核小组复核" width="140">
+          <template #default="{ row }">
+            <ElTag :type="row.reviewGroupConfirmedAt ? 'success' : 'info'">
+              {{ row.reviewGroupConfirmedAt ? '已复核' : '待复核' }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
         <ElTableColumn label="操作" width="190" fixed="right">
           <template #default="{ row }">
             <ElButton type="primary" link @click="loadAssist(row.userId)">协助录入</ElButton>
