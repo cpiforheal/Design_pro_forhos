@@ -1,6 +1,8 @@
 services:
   app:
-    image: ${APP_IMAGE:-ghcr.io/your-github-user/your-repository/api:latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile
     container_name: hospital-assessment-app
     restart: unless-stopped
     environment:
@@ -11,12 +13,14 @@ services:
       HOSPITAL_TASK_EVIDENCE_UPLOAD_DIR: /app/server/data/uploads/task-evidence
       HOSPITAL_TASK_EVIDENCE_MAX_SIZE: 20971520
     volumes:
-      - ./server/data:/app/server/data
+      - ../server/data:/app/server/data
     expose:
       - '3010'
 
   nginx:
-    image: ${WEB_IMAGE:-ghcr.io/your-github-user/your-repository/web:latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile.web
     container_name: hospital-assessment-nginx
     restart: unless-stopped
     depends_on:

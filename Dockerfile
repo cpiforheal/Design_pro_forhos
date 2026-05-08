@@ -1,29 +1,20 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-alpine AS build
-WORKDIR /app
-
-RUN corepack enable
-
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-
-COPY . .
-RUN pnpm build
-
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@10.18.3 --activate
 
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod --frozen-lockfile
+RUN pnpm install --frozen-lockfile --prod=false
 
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/server ./server
-COPY --from=build /app/tsconfig.server.json ./tsconfig.server.json
+COPY server ./server
+COPY src/data ./src/data
+COPY src/types ./src/types
+COPY src/utils/assessment ./src/utils/assessment
+COPY tsconfig.json tsconfig.server.json ./
 
 EXPOSE 3010
 
