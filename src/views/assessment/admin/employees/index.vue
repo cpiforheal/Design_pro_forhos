@@ -11,6 +11,14 @@
           </div>
           <div class="table-tools">
             <ElButton type="primary" @click="openCreateDialog">新增员工</ElButton>
+            <ElButton
+              type="danger"
+              plain
+              :disabled="selectedUsers.length !== 1"
+              @click="deleteSelectedUser"
+            >
+              删除员工信息
+            </ElButton>
             <ElTooltip content="刷新">
               <ElButton class="tool-button" @click="loadUsers">
                 <ArtSvgIcon icon="ri:refresh-line" />
@@ -60,7 +68,13 @@
         </ElFormItem>
       </ElForm>
 
-      <ElTable v-loading="loading" :data="filteredUsers" border height="100%">
+      <ElTable
+        v-loading="loading"
+        :data="filteredUsers"
+        border
+        height="100%"
+        @selection-change="handleSelectionChange"
+      >
         <ElTableColumn type="selection" width="44" />
         <ElTableColumn type="index" label="序号" width="70" />
         <ElTableColumn label="用户" min-width="230">
@@ -229,6 +243,7 @@
   import { ElMessage, ElMessageBox } from 'element-plus'
   import {
     createAccountUser,
+    deleteAccountUser,
     fetchAccountUsers,
     fetchRoleGrants,
     resetAccountUserPassword,
@@ -244,6 +259,7 @@
   const saving = ref(false)
   const accountUsers = ref<AccountUserItem[]>([])
   const permissionGrants = ref<PermissionGrant[]>([])
+  const selectedUsers = ref<AccountUserItem[]>([])
   const profileDialogVisible = ref(false)
   const editingUserId = ref<number | null>(null)
 
@@ -288,6 +304,10 @@
   })
 
   onMounted(loadUsers)
+
+  function handleSelectionChange(rows: AccountUserItem[]) {
+    selectedUsers.value = rows
+  }
 
   async function loadUsers() {
     loading.value = true
@@ -397,6 +417,33 @@
       profileForm.password = ''
     } finally {
       saving.value = false
+    }
+  }
+
+  async function deleteSelectedUser() {
+    const user = selectedUsers.value[0]
+    if (!user) return
+    try {
+      await ElMessageBox.confirm(
+        `文档建议离职或暂不使用员工优先“停用账号”，以保留历史考核和病历追溯。仅误建账号或测试账号建议删除。确定仍要删除员工“${user.displayName}（${user.employeeNo}）”吗？删除后该员工的考核记录、任务记录和权限绑定将同步清理，且无法恢复。`,
+        '删除员工信息',
+        {
+          type: 'warning',
+          confirmButtonText: '确定删除',
+          cancelButtonText: '取消',
+          confirmButtonClass: 'el-button--danger'
+        }
+      )
+    } catch {
+      return
+    }
+    loading.value = true
+    try {
+      await deleteAccountUser(user.id)
+      await loadUsers()
+      selectedUsers.value = []
+    } finally {
+      loading.value = false
     }
   }
 

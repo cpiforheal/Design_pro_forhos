@@ -269,6 +269,17 @@ export interface MedicalRecordCaseItem {
   updatedAt: string
 }
 
+export interface MedicalRecordReviewTodoItem {
+  id: number
+  caseNo: string
+  title: string
+  status: 'submitted'
+  assignedDoctorUserId: number
+  assignedDoctorName: string
+  updatedByName: string
+  updatedAt: string
+}
+
 const dbDir = path.resolve(process.cwd(), 'server/data')
 const dbPath = path.join(dbDir, 'hospital-assessment.sqlite')
 let SQL: SqlJsStatic | null = null
@@ -276,7 +287,9 @@ let db: Database | null = null
 
 const officialAssessmentStandards = {
   completed: '完成即合格；未完成进入整改闭环，要求台账可查、责任到人、限期销号。',
-  redline: '勾选“是”或填报为未完成时，一次性扣 12 分，全院通报、严肃追责。'
+  evidence: '需上传过程佐证或台账材料；文字说明只作补充，不能替代佐证文件。',
+  signature: '按本人、分管负责人、考核小组复核三级确认留痕，确认后纳入周期归档。',
+  redline: '红线一票否决：虚报、假报、瞒报或干扰管理，一次性扣 12 分，全院通报、严肃追责。'
 }
 
 const officialAssessmentItems = [
@@ -401,11 +414,47 @@ const officialAssessmentItems = [
     '按时填报、数据准确、自动统计、及时归档'
   ],
   [
+    'common-16',
+    '全员通用',
+    'allStaff',
+    '全员通用基本工作考核',
+    '签字确认：本人、分管负责人、考核小组复核',
+    officialAssessmentStandards.signature,
+    false,
+    1,
+    1,
+    0
+  ],
+  [
     'redline-data-truth',
     '全员通用',
     'allStaff',
     '红线考核（一票否决）',
     '红线考核：存在虚报、假报、瞒报、数据造假',
+    officialAssessmentStandards.redline,
+    true,
+    0,
+    12,
+    1
+  ],
+  [
+    'redline-discipline',
+    '全员通用',
+    'allStaff',
+    '红线考核（一票否决）',
+    '红线考核：拒不执行、越位指挥、推诿扯皮、干扰管理',
+    officialAssessmentStandards.redline,
+    true,
+    0,
+    12,
+    1
+  ],
+  [
+    'redline-safety',
+    '全员通用',
+    'allStaff',
+    '红线考核（一票否决）',
+    '红线考核：医疗质量、安全生产、医保合规出现重大风险或隐瞒不报',
     officialAssessmentStandards.redline,
     true,
     0,
@@ -718,6 +767,18 @@ const officialAssessmentItems = [
     'financeHr',
     '财务与人力资源中心专项考核',
     '医保结算、对账、资料完整迎检'
+  ],
+  [
+    'rectification-closure',
+    '整改闭环',
+    'allStaff',
+    '存在问题与整改闭环（分管负责人督办）',
+    '整改措施、责任人、督办负责人、整改时限、整改销号完整留痕',
+    officialAssessmentStandards.evidence,
+    false,
+    1,
+    1,
+    1
   ]
 ] as const
 
@@ -1077,6 +1138,102 @@ export async function resetAccountUserPassword(userId: number, password: string)
   persistDatabase()
 }
 
+export async function deleteAccountUser(userId: number): Promise<void> {
+  const user = await findUserById(userId)
+  if (!user) throw new Error('员工账号不存在')
+  const roleRows = await queryRows(
+    `
+    SELECT r.code
+    FROM user_roles ur
+    INNER JOIN roles r ON r.id = ur.role_id
+    WHERE ur.user_id = $userId
+  `,
+    { $userId: userId }
+  )
+  if (roleRows.some((row) => String(row.code) === 'R_SUPER')) {
+    throw new Error('超级管理员账号不能删除')
+  }
+
+  await runSql('DELETE FROM task_evidence_attachments WHERE uploaded_by = $userId', {
+    $userId: userId
+  })
+  await runSql(
+    `
+    DELETE FROM task_evidence_attachments
+    WHERE record_id IN (SELECT id FROM task_records WHERE user_id = $userId)
+  `,
+    { $userId: userId }
+  )
+  await runSql('DELETE FROM rectifications WHERE owner_user_id = $userId', { $userId: userId })
+  await runSql(
+    'UPDATE rectifications SET responsible_user_id = NULL WHERE responsible_user_id = $userId',
+    {
+      $userId: userId
+    }
+  )
+  await runSql(
+    'UPDATE rectifications SET supervisor_user_id = NULL WHERE supervisor_user_id = $userId',
+    {
+      $userId: userId
+    }
+  )
+  await runSql(
+    'DELETE FROM review_logs WHERE target_user_id = $userId OR operator_user_id = $userId',
+    {
+      $userId: userId
+    }
+  )
+  await runSql(
+    'DELETE FROM performance_confirmations WHERE user_id = $userId OR confirmer_user_id = $userId',
+    {
+      $userId: userId
+    }
+  )
+  await runSql(
+    `
+    UPDATE performance_results
+    SET leader_score_user_id = CASE WHEN leader_score_user_id = $userId THEN NULL ELSE leader_score_user_id END,
+        review_group_user_id = CASE WHEN review_group_user_id = $userId THEN NULL ELSE review_group_user_id END,
+        manager_user_id = CASE WHEN manager_user_id = $userId THEN NULL ELSE manager_user_id END
+  `,
+    { $userId: userId }
+  )
+  await runSql('DELETE FROM performance_results WHERE user_id = $userId', { $userId: userId })
+  await runSql('DELETE FROM assessment_records WHERE user_id = $userId', { $userId: userId })
+  await runSql('DELETE FROM task_records WHERE user_id = $userId', { $userId: userId })
+  await runSql('DELETE FROM task_assignees WHERE user_id = $userId', { $userId: userId })
+  await runSql(
+    `
+    UPDATE tasks
+    SET deployer_user_id = CASE WHEN deployer_user_id = $userId THEN NULL ELSE deployer_user_id END,
+        acceptor_user_id = CASE WHEN acceptor_user_id = $userId THEN NULL ELSE acceptor_user_id END
+  `,
+    { $userId: userId }
+  )
+  await runSql(
+    `
+    UPDATE medical_record_cases
+    SET assigned_doctor_user_id = CASE WHEN assigned_doctor_user_id = $userId THEN NULL ELSE assigned_doctor_user_id END,
+        created_by = CASE WHEN created_by = $userId THEN 0 ELSE created_by END,
+        updated_by = CASE WHEN updated_by = $userId THEN 0 ELSE updated_by END
+  `,
+    { $userId: userId }
+  )
+  await runSql(
+    `
+    UPDATE boards
+    SET leader_user_id = CASE WHEN leader_user_id = $userId THEN NULL ELSE leader_user_id END,
+        manager_user_id = CASE WHEN manager_user_id = $userId THEN NULL ELSE manager_user_id END,
+        office_coordinator_user_id = CASE WHEN office_coordinator_user_id = $userId THEN NULL ELSE office_coordinator_user_id END
+  `,
+    { $userId: userId }
+  )
+  await runSql('UPDATE login_logs SET user_id = NULL WHERE user_id = $userId', { $userId: userId })
+  await runSql('DELETE FROM user_roles WHERE user_id = $userId', { $userId: userId })
+  await runSql('DELETE FROM users WHERE id = $userId', { $userId: userId })
+  persistDatabase()
+}
+
 export async function recordLoginLog(payload: LoginLogPayload): Promise<void> {
   await runSql(
     `
@@ -1222,6 +1379,7 @@ export async function getAssessmentBootstrap(userId: number) {
   const taskRecords = await getTaskRecordMap(currentCycle.id, actor.user.id)
   const rectifications = await getRectifications(actor)
   const reviewTodoItems = await getReviewTodoItems(actor)
+  const medicalRecordReviewTodoItems = await getMedicalRecordReviewTodoItems(actor)
   const reviewLogs = await getReviewLogsForActor(actor)
   await ensurePerformanceResultsForActor(actor, currentCycle)
   const performanceResults = await getPerformanceResultsForActor(actor, currentCycle.id)
@@ -1261,6 +1419,7 @@ export async function getAssessmentBootstrap(userId: number) {
     taskRecords,
     rectifications,
     reviewTodoItems,
+    medicalRecordReviewTodoItems,
     reviewLogs,
     performanceResults,
     performanceSummary,
@@ -2225,7 +2384,7 @@ export async function updateStaffingPosition(
 }
 
 export async function listMedicalRecordCases(userId: number): Promise<MedicalRecordCaseItem[]> {
-  await requireActor(userId)
+  const actor = await requireActor(userId)
   const rows = await queryRows(`
     SELECT mrc.*,
            creator.display_name AS created_by_name,
@@ -2237,7 +2396,35 @@ export async function listMedicalRecordCases(userId: number): Promise<MedicalRec
     LEFT JOIN users assigned_doctor ON assigned_doctor.id = mrc.assigned_doctor_user_id
     ORDER BY mrc.updated_at DESC, mrc.id DESC
   `)
-  return rows.map(mapMedicalRecordCase)
+  return rows.filter((row) => canSeeMedicalRecordCase(actor, row)).map(mapMedicalRecordCase)
+}
+
+export async function getMedicalRecordReviewTodoItems(actor: {
+  user: AccountUser
+  permissions: AccountPermission
+}): Promise<MedicalRecordReviewTodoItem[]> {
+  const rows = await queryRows(`
+    SELECT mrc.*,
+           updater.display_name AS updated_by_name,
+           assigned_doctor.display_name AS assigned_doctor_name
+    FROM medical_record_cases mrc
+    LEFT JOIN users updater ON updater.id = mrc.updated_by
+    LEFT JOIN users assigned_doctor ON assigned_doctor.id = mrc.assigned_doctor_user_id
+    WHERE mrc.status = 'submitted'
+    ORDER BY mrc.updated_at DESC, mrc.id DESC
+  `)
+  return rows
+    .filter((row) => canApproveMedicalRecordCase(actor, row))
+    .map((row) => ({
+      id: Number(row.id),
+      caseNo: String(row.case_no || ''),
+      title: String(row.title || ''),
+      status: 'submitted' as const,
+      assignedDoctorUserId: Number(row.assigned_doctor_user_id || 0),
+      assignedDoctorName: String(row.assigned_doctor_name || ''),
+      updatedByName: String(row.updated_by_name || ''),
+      updatedAt: String(row.updated_at || '')
+    }))
 }
 
 export async function listMedicalRecordDoctors(userId: number) {
@@ -2329,11 +2516,25 @@ export async function updateMedicalRecordCase(
   return getMedicalRecordCase(userId, id)
 }
 
+export async function approveMedicalRecordCase(
+  userId: number,
+  id: number
+): Promise<MedicalRecordCaseItem> {
+  const current = await getMedicalRecordCase(userId, id)
+  if (current.status !== 'submitted') throw new Error('只有已提交审核的病历才能确认完成')
+  return updateMedicalRecordCase(userId, id, {
+    title: current.title,
+    status: 'approved',
+    assignedDoctorUserId: current.assignedDoctorUserId,
+    values: current.values
+  })
+}
+
 export async function getMedicalRecordCase(
   userId: number,
   id: number
 ): Promise<MedicalRecordCaseItem> {
-  await requireActor(userId)
+  const actor = await requireActor(userId)
   const row = (
     await queryRows(
       `
@@ -2352,6 +2553,7 @@ export async function getMedicalRecordCase(
     )
   )[0]
   if (!row) throw new Error('病历不存在')
+  if (!canSeeMedicalRecordCase(actor, row)) throw new Error('无权访问该病历')
   return mapMedicalRecordCase(row)
 }
 
@@ -4350,6 +4552,30 @@ async function createMedicalRecordCaseNo(): Promise<string> {
     )
   )[0]
   return `${prefix}-${String(Number(row?.total || 0) + 1).padStart(3, '0')}`
+}
+
+function canSeeMedicalRecordCase(
+  actor: { user: AccountUser; permissions: AccountPermission },
+  row: Record<string, unknown>
+): boolean {
+  if (actor.permissions.roleCode === 'R_SUPER') return true
+  if (Number(row.assigned_doctor_user_id || 0) === actor.user.id) return true
+  if (
+    Number(row.created_by || 0) === actor.user.id ||
+    Number(row.updated_by || 0) === actor.user.id
+  )
+    return true
+  return actor.user.medicalRecordStages.length > 0 && String(row.status || '') !== 'approved'
+}
+
+function canApproveMedicalRecordCase(
+  actor: { user: AccountUser; permissions: AccountPermission },
+  row: Record<string, unknown>
+): boolean {
+  return (
+    actor.permissions.roleCode === 'R_SUPER' ||
+    Number(row.assigned_doctor_user_id || 0) === actor.user.id
+  )
 }
 
 function validateMedicalRecordPayload(payload: MedicalRecordCasePayload): void {

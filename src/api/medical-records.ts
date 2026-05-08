@@ -44,3 +44,10 @@ export function updateMedicalRecordCase(
     showErrorMessage: options.showErrorMessage
   })
 }
+
+export function approveMedicalRecordCase(id: number) {
+  return request.post<MedicalRecordCase>({
+    url: `/api/medical-records/${id}/approve`,
+    showSuccessMessage: true
+  })
+}

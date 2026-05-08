@@ -15,8 +15,14 @@
         type="info"
         show-icon
         :closable="false"
-        title="一级决策层 3 人、二级执行层 6 人；三级一线岗按刚需配置，可在此维护岗位职责和直管岗位。"
+        title="最小收敛原则：一级决策层 3 人、二级执行层 6 大中心、三级一线刚需岗位；岗位在哪里、隶属哪里、归谁直管、由谁考核。"
       />
+
+      <ElDescriptions class="staffing-rules" :column="3" border size="small">
+        <ElDescriptionsItem label="管理铁律">一人多职、垂直管理、归口负责</ElDescriptionsItem>
+        <ElDescriptionsItem label="运行闭环">日常常态化管理 + 每周重点攻坚</ElDescriptionsItem>
+        <ElDescriptionsItem label="考核绑定">周二考核、整改销号、绩效挂钩</ElDescriptionsItem>
+      </ElDescriptions>
 
       <ElRow class="summary-row" :gutter="16">
         <ElCol :span="6"><ElStatistic title="架构条目" :value="staffingRows.length" /></ElCol>
@@ -143,6 +149,7 @@
   }
 
   .staffing-alert,
+  .staffing-rules,
   .summary-row {
     margin-bottom: 16px;
   }

@@ -150,6 +150,9 @@ export function useAssessmentPlatform() {
   )
   const rectificationItems = computed(() => bootstrap.value?.rectifications ?? [])
   const reviewTodoItems = computed(() => bootstrap.value?.reviewTodoItems ?? [])
+  const medicalRecordReviewTodoItems = computed(
+    () => bootstrap.value?.medicalRecordReviewTodoItems ?? []
+  )
   const reviewLogs = computed(() =>
     reviewLogList.value.length ? reviewLogList.value : (bootstrap.value?.reviewLogs ?? [])
   )
@@ -562,6 +565,7 @@ export function useAssessmentPlatform() {
     boardScoreBars,
     employeeTodoItems,
     reviewTodoItems,
+    medicalRecordReviewTodoItems,
     reviewLogs,
     performanceResults,
     myPerformanceResult,

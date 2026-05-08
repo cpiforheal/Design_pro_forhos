@@ -22,6 +22,11 @@
       </ElDescriptions>
 
       <ElDivider />
+      <ElSpace wrap class="mb-4">
+        <ElButton type="primary" plain @click="goReviewDesk">去审核台</ElButton>
+        <ElButton plain @click="goManagerTasks">去分管任务</ElButton>
+        <ElButton plain @click="goRectification">去整改台账</ElButton>
+      </ElSpace>
       <ElTable :data="performanceResults" border>
         <ElTableColumn prop="employeeName" label="员工" width="140" />
         <ElTableColumn prop="boardName" label="板块" width="150" />
@@ -163,6 +168,7 @@
 
 <script setup lang="ts">
   import { ref } from 'vue'
+  import { useRouter } from 'vue-router'
   import { ElMessage } from 'element-plus'
   import { useAssessmentPlatform } from '@/composables/useAssessmentPlatform'
   import { fetchAssessmentAssist, saveAssessmentRecord, saveTaskRecord } from '@/api/assessment'
@@ -181,6 +187,7 @@
     managerConfirmPerformanceResult
   } = useAssessmentPlatform()
 
+  const router = useRouter()
   const assistPayload = ref<AssessmentAssistPayload | null>(null)
   const assistTab = ref<'assessment' | 'task'>('assessment')
   const assistAssessmentDrafts = ref<Record<string, AssessmentRecordDraft>>({})
@@ -228,6 +235,18 @@
     })
     await loadAssist(assistPayload.value.targetUser.userId)
     ElMessage.success('已协助保存任务，并写入日志')
+  }
+
+  function goReviewDesk() {
+    router.push('/assessment-review/desk')
+  }
+
+  function goManagerTasks() {
+    router.push('/assessment-review/manager-tasks')
+  }
+
+  function goRectification() {
+    router.push('/assessment/rectification')
   }
 
   function createAssessmentDraft(): AssessmentRecordDraft {

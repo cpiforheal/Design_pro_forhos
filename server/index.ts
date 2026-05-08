@@ -9,9 +9,11 @@ import multer from 'multer'
 import { loadServerEnv } from './env'
 import {
   addTaskEvidenceAttachment,
+  approveMedicalRecordCase,
   closeRectification,
   confirmPerformance,
   createAccountUser,
+  deleteAccountUser,
   createManagedBoardTask,
   createMedicalRecordCase,
   findUserById,
@@ -349,6 +351,24 @@ app.put(
   }
 )
 
+app.delete('/api/admin/users/:id', authMiddleware, requireSuperAdmin, async (req, res, next) => {
+  try {
+    const userId = Number(req.params.id)
+    if (!userId) {
+      res.status(400).json({ code: 400, msg: '请选择要删除的员工账号', data: null })
+      return
+    }
+    if (req.auth?.userId === userId) {
+      res.status(400).json({ code: 400, msg: '不能删除当前登录账号', data: null })
+      return
+    }
+    await deleteAccountUser(userId)
+    res.json({ code: 200, msg: '员工信息已删除', data: null })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.get('/api/admin/login-logs', authMiddleware, requireSuperAdmin, async (req, res, next) => {
   try {
     res.json({
@@ -576,6 +596,18 @@ app.put('/api/medical-records/:id', authMiddleware, async (req, res, next) => {
       code: 200,
       msg: '病历已保存',
       data: await updateMedicalRecordCase(req.auth!.userId, Number(req.params.id), req.body)
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/medical-records/:id/approve', authMiddleware, async (req, res, next) => {
+  try {
+    res.json({
+      code: 200,
+      msg: '病历已由指定医师确认完成',
+      data: await approveMedicalRecordCase(req.auth!.userId, Number(req.params.id))
     })
   } catch (error) {
     next(error)
@@ -955,16 +987,22 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   void _next
   console.error('[Hospital API] 服务异常:', error)
   const message = error instanceof Error ? error.message : '服务异常，请稍后重试'
-  const statusCode =
-    /SQL|syntax|constraint|database|prepare|bind/i.test(message) || !(error instanceof Error)
-      ? 500
-      : 400
+  const statusCode = resolveErrorStatusCode(message, error)
   res.status(statusCode).json({
     code: statusCode,
     msg: message,
     data: null
   })
 })
+
+function resolveErrorStatusCode(message: string, error: unknown): number {
+  if (!(error instanceof Error)) return 500
+  if (/SQL|syntax|constraint|database|prepare|bind/i.test(message)) return 500
+  if (/未登录|登录已失效|登录已过期|账号不存在或已停用|账号或密码错误/i.test(message)) return 401
+  if (/无权|仅超级管理员|普通员工无审核权限/i.test(message)) return 403
+  if (/不存在|已停用|找不到/i.test(message)) return 404
+  return 400
+}
 
 await getDatabase()
 

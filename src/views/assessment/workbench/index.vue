@@ -74,6 +74,38 @@
       </ElCol>
     </ElRow>
 
+    <ElRow v-if="medicalRecordReviewTodoItems.length" :gutter="20">
+      <ElCol :span="24">
+        <div class="art-card p-5 mb-5 medical-review-card">
+          <div class="art-card-header">
+            <div class="title">
+              <h4>病历审核通知</h4>
+              <p>指定给当前账号的病历已提交，请审核医师确认后完成归档</p>
+            </div>
+            <ElTag type="warning" effect="light"
+              >{{ medicalRecordReviewTodoItems.length }} 条待确认</ElTag
+            >
+          </div>
+          <div class="medical-review-list">
+            <div
+              v-for="item in medicalRecordReviewTodoItems"
+              :key="item.id"
+              class="medical-review-item"
+            >
+              <div>
+                <strong>{{ item.title }}</strong>
+                <p
+                  >{{ item.caseNo }} · 提交人：{{ item.updatedByName || '协作岗位' }} ·
+                  {{ item.updatedAt }}</p
+                >
+              </div>
+              <ElButton type="primary" @click="goMedicalRecord(item.id)">去确认</ElButton>
+            </div>
+          </div>
+        </div>
+      </ElCol>
+    </ElRow>
+
     <ElRow :gutter="20">
       <ElCol :xl="10" :lg="10" :xs="24">
         <div class="art-card h-100 p-5 mb-5 max-sm:mb-4">
@@ -291,6 +323,7 @@
     boardScoreBars,
     hospitalTaskDrafts,
     boardTaskDrafts,
+    medicalRecordReviewTodoItems,
     resetDemoData,
     submitCurrentCycle,
     exportCurrentResult,
@@ -411,6 +444,9 @@
   type ElTagType = TagProps['type']
 
   const noticeMessages = computed(() => [
+    ...medicalRecordReviewTodoItems.value.map(
+      (item) => `病历审核：${item.title}（${item.caseNo}）已提交给您，请进入病历协作确认完成`
+    ),
     `全员通用和板块考核提交截止：${currentBoard.value.name} / ${summary.value.totalApplicable} 项，统一截止 ${currentAssessmentCycle.value.submitDeadline}`,
     `审核截止：${currentAssessmentCycle.value.reviewDeadline}，请负责人按时完成确认`,
     ...currentTasks.value
@@ -456,6 +492,10 @@
     router.push({ path: '/assessment/tasks', query: { taskId } })
   }
 
+  function goMedicalRecord(caseId: number) {
+    router.push({ path: '/assessment/medical-records', query: { caseId } })
+  }
+
   function goCalendarTask(item: AssessmentCalendarItem) {
     goCompleteTask(item.id)
   }
@@ -480,6 +520,38 @@
           color: var(--art-text-gray-600);
         }
       }
+    }
+  }
+
+  .medical-review-card {
+    background: linear-gradient(135deg, var(--el-color-warning-light-9), var(--art-main-bg-color));
+    border: 1px solid var(--el-color-warning-light-7);
+  }
+
+  .medical-review-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .medical-review-item {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: var(--art-main-bg-color);
+    border: 1px solid var(--art-border-color);
+    border-radius: 12px;
+
+    strong {
+      color: var(--art-text-gray-900);
+    }
+
+    p {
+      margin: 6px 0 0;
+      font-size: 13px;
+      color: var(--art-text-gray-500);
     }
   }
 

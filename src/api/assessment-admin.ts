@@ -111,6 +111,13 @@ export function resetAccountUserPassword(userId: number, password: string) {
   })
 }
 
+export function deleteAccountUser(userId: number) {
+  return request.del<null>({
+    url: `/api/admin/users/${userId}`,
+    showSuccessMessage: true
+  })
+}
+
 export function fetchLoginLogs(limit = 200) {
   return request.get<LoginLogItem[]>({
     url: '/api/admin/login-logs',

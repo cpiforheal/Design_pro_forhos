@@ -45,6 +45,11 @@
     </ElCard>
 
     <ElCard class="mt-4">
+      <ElSpace wrap class="mb-4">
+        <ElButton type="primary" plain @click="goSummary">去汇总看板</ElButton>
+        <ElButton plain @click="goRectification">去整改台账</ElButton>
+        <ElButton plain @click="goReviewDesk">去审核台</ElButton>
+      </ElSpace>
       <template #header>
         <div>
           <h3 class="m-0 text-lg font-medium">板块负责人审核</h3>
@@ -213,6 +218,7 @@
 
 <script setup lang="ts">
   import { computed, reactive, ref, watchEffect } from 'vue'
+  import { useRouter } from 'vue-router'
   import { ElMessage } from 'element-plus'
   import { fetchAssessmentAssist } from '@/api/assessment'
   import { useAssessmentPlatform } from '@/composables/useAssessmentPlatform'
@@ -233,6 +239,7 @@
     getStatusLabel
   } = useAssessmentPlatform()
 
+  const router = useRouter()
   const leaderScoreDrafts = reactive<Record<number, { score?: number; comment: string }>>({})
   const detailVisible = ref(false)
   const detailLoading = ref(false)
@@ -279,6 +286,18 @@
       leaderFinalScore: score,
       leaderScoreComment: draft.comment || ''
     })
+  }
+
+  function goSummary() {
+    router.push('/assessment/summary')
+  }
+
+  function goRectification() {
+    router.push('/assessment/rectification')
+  }
+
+  function goReviewDesk() {
+    router.push('/assessment-review/desk')
   }
 
   function statusType(status?: AssessmentStatus) {

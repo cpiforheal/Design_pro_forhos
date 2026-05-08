@@ -198,9 +198,17 @@
       // 登录成功处理
       showLoginSuccessNotice()
 
-      // 获取 redirect 参数，如果存在则跳转到指定页面，否则跳转到首页
+      // 获取 redirect 参数，如果存在则跳转到指定页面，否则按角色进入最简入口
       const redirect = route.query.redirect as string
-      router.push(redirect || '/')
+      const roles = userStore.info.roles || []
+      const landingPath = roles.includes('R_EMPLOYEE')
+        ? '/employee-assessment/my'
+        : roles.includes('R_LEADER')
+          ? '/assessment-review/leader-view'
+          : roles.includes('R_MANAGER')
+            ? '/assessment-review/manager-view'
+            : '/assessment/workbench'
+      router.push(redirect || landingPath)
     } catch (error) {
       // 处理 HttpError
       if (error instanceof HttpError) {

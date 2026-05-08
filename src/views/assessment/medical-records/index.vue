@@ -5,7 +5,7 @@
         <ElTag type="success" size="large">专病病历 MVP</ElTag>
         <h1>混合痔 / 肠镜 / 套扎病历协作填写</h1>
         <p>
-          左侧按岗位填写结构化字段，右侧实时预览最终文档。第一版默认不填写真实姓名、身份证、电话和完整住址。
+          左侧按岗位填写结构化字段，右侧实时预览最终文档。最小收敛版已对齐混合痔、肠镜、套扎表格关键字段；真实身份信息可按院内授权脱敏填写。
         </p>
       </div>
       <div class="hero-actions">
@@ -20,7 +20,7 @@
           保存
         </ElButton>
         <ElButton size="large" :disabled="!draft || !canSubmitCase" @click="submitCase">
-          提交指定医师审核
+          推送给指定审核医师
         </ElButton>
         <ElButton
           v-if="draft?.status === 'submitted'"
@@ -29,7 +29,7 @@
           :disabled="!canApproveCase"
           @click="approveCase"
         >
-          医师确认归档
+          审核医师确认完成
         </ElButton>
         <ElButton size="large" :disabled="!draft" @click="printPreview">导出 / 打印</ElButton>
       </div>
@@ -317,11 +317,12 @@
 
 <script setup lang="ts">
   import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-  import { onBeforeRouteLeave } from 'vue-router'
+  import { onBeforeRouteLeave, useRoute } from 'vue-router'
   import { ElMessage } from 'element-plus'
   import hospitalLogo from '@imgs/common/logo1.jpg'
   import { useUserStore } from '@/store/modules/user'
   import {
+    approveMedicalRecordCase,
     createMedicalRecordCase,
     fetchMedicalRecordCases,
     fetchMedicalRecordDoctors,
@@ -387,6 +388,7 @@
     medicalRecordStageOptions.map((stage) => [stage.value, stage.label])
   ) as Record<MedicalStageKey, string>
 
+  const route = useRoute()
   const userStore = useUserStore()
   const cases = ref<MedicalRecordCase[]>([])
   const draft = ref<MedicalRecordCase | null>(null)
@@ -408,9 +410,9 @@
       fields: [
         {
           key: 'patientAlias',
-          label: '患者代号',
+          label: '患者代号 / 姓名',
           type: 'text',
-          placeholder: '如 A001，不填真实姓名',
+          placeholder: '可填患者代号；正式授权后填写姓名',
           allowedStages: ['frontDesk']
         },
         {
@@ -436,6 +438,39 @@
           allowedStages: ['frontDesk']
         },
         {
+          key: 'ethnicity',
+          label: '民族',
+          type: 'text',
+          placeholder: '如 汉族',
+          allowedStages: ['frontDesk']
+        },
+        {
+          key: 'birthDate',
+          label: '出生年月',
+          type: 'date',
+          allowedStages: ['frontDesk']
+        },
+        {
+          key: 'maritalStatus',
+          label: '婚姻状况',
+          type: 'select',
+          options: ['未婚', '已婚', '丧偶', '离婚', '其他'],
+          allowedStages: ['frontDesk']
+        },
+        {
+          key: 'occupation',
+          label: '职业',
+          type: 'text',
+          allowedStages: ['frontDesk']
+        },
+        {
+          key: 'idCardMasked',
+          label: '身份证号（脱敏）',
+          type: 'text',
+          placeholder: '建议仅保留后 4 位或院内脱敏编号',
+          allowedStages: ['frontDesk']
+        },
+        {
           key: 'paymentType',
           label: '医疗付费方式',
           type: 'select',
@@ -443,12 +478,38 @@
           allowedStages: ['frontDesk']
         },
         {
-          key: 'contactNote',
-          label: '联系人备注',
+          key: 'contactName',
+          label: '联系人姓名',
           type: 'text',
-          placeholder: '只写脱敏备注，不填手机号',
+          allowedStages: ['frontDesk']
+        },
+        {
+          key: 'contactRelation',
+          label: '与患者关系',
+          type: 'text',
+          allowedStages: ['frontDesk']
+        },
+        {
+          key: 'contactNote',
+          label: '联系电话 / 地址备注（脱敏）',
+          type: 'text',
+          placeholder: '建议仅填尾号、乡镇村组或院内授权备注',
           wide: true,
           allowedStages: ['frontDesk']
+        },
+        {
+          key: 'allergyHistory',
+          label: '过敏史',
+          type: 'select',
+          options: ['无', '有（见备注）', '未询问'],
+          allowedStages: ['frontDesk', 'nursing', 'doctor']
+        },
+        {
+          key: 'bloodType',
+          label: '血型 / Rh',
+          type: 'text',
+          placeholder: '如 A 型 Rh 阳性 / 未查',
+          allowedStages: ['frontDesk', 'checks']
         }
       ]
     },
@@ -470,6 +531,13 @@
           min: 0,
           max: 365,
           allowedStages: ['discharge']
+        },
+        {
+          key: 'admissionPath',
+          label: '入院途径',
+          type: 'select',
+          options: ['门诊', '急诊', '转入', '其他医疗机构转入', '其他'],
+          allowedStages: ['frontDesk']
         },
         {
           key: 'department',
@@ -626,9 +694,18 @@
         {
           key: 'gastroScope',
           label: '胃肠镜检查',
+          type: 'multi',
+          options: ['胃镜（结果手动填写）', '肠镜（结果手动填写）', '无', '其他'],
+          wide: true,
+          allowedStages: ['checks', 'doctor']
+        },
+        {
+          key: 'gastroScopeResult',
+          label: '胃肠镜结果补充',
           type: 'textarea',
           rows: 3,
           wide: true,
+          placeholder: '如 胃角粘膜病变、慢性萎缩性胃炎、十二指肠溃疡、直肠炎等',
           allowedStages: ['checks', 'doctor']
         }
       ]
@@ -855,7 +932,10 @@
     if (!currentStages.value.length)
       return '当前账号未绑定病历填写权限，请超级管理员在员工管理中设置“病历权限”。'
     if (!draft.value?.assignedDoctorUserId) return '该病历还没有指定审核医师，请超级管理员先指定。'
-    return `带“只读”标记的字段由其他岗位填写，提交后由指定医师 ${draft.value.assignedDoctorName || ''} 最终确认归档。`
+    if (draft.value.status === 'submitted') {
+      return `病历已推送给指定审核医师 ${draft.value.assignedDoctorName || ''}，需医师点击“审核医师确认完成”后才算完成。`
+    }
+    return `带“只读”标记的字段由其他岗位填写，推送后由指定医师 ${draft.value.assignedDoctorName || ''} 最终确认完成。`
   })
 
   watch(
@@ -891,8 +971,12 @@
     try {
       cases.value = await fetchMedicalRecordCases({ showErrorMessage: false })
       if (cases.value.length) {
+        const queryCaseId = Number(route.query.caseId)
         const lastDraftId = Number(window.sessionStorage.getItem(LAST_DRAFT_ID_KEY))
-        const next = cases.value.find((item) => item.id === lastDraftId) || cases.value[0]
+        const next =
+          cases.value.find((item) => item.id === queryCaseId) ||
+          cases.value.find((item) => item.id === lastDraftId) ||
+          cases.value[0]
         await selectCase(next)
       }
     } catch {
@@ -980,18 +1064,22 @@
     }
     draft.value.status = 'submitted'
     await saveCase()
-    ElMessage.success(`已提交给 ${draft.value.assignedDoctorName || '指定医师'} 审核`)
+    ElMessage.success(
+      `已推送给 ${draft.value.assignedDoctorName || '指定审核医师'}，待医师确认后完成`
+    )
   }
 
   async function approveCase() {
     if (!draft.value) return
     if (!canApproveCase.value) {
-      ElMessage.warning('仅指定医师或超级管理员可确认归档')
+      ElMessage.warning('仅指定审核医师或超级管理员可确认完成')
       return
     }
-    draft.value.status = 'approved'
-    await saveCase()
-    ElMessage.success('病历已由指定医师确认归档')
+    const approved = await approveMedicalRecordCase(draft.value.id)
+    cases.value = [approved, ...cases.value.filter((item) => item.id !== approved.id)]
+    setDraft(approved)
+    clearDraftBackup(approved.id)
+    ElMessage.success('病历已由指定审核医师确认完成')
   }
 
   async function selectCase(item: MedicalRecordCase) {

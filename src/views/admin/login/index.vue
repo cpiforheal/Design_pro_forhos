@@ -157,13 +157,16 @@
 
       ElMessage.success('登录成功，已按账号权限生成菜单')
 
-      const isEmployee = userInfo.roles.includes('R_EMPLOYEE')
-      const defaultRedirect = isEmployee ? '/employee-assessment/my' : '/assessment/workbench'
+      const roles = userInfo.roles || []
+      const defaultRedirect = roles.includes('R_EMPLOYEE')
+        ? '/employee-assessment/my'
+        : roles.includes('R_LEADER')
+          ? '/assessment-review/leader-view'
+          : roles.includes('R_MANAGER')
+            ? '/assessment-review/manager-view'
+            : '/assessment/workbench'
       const queryRedirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-      const redirect =
-        isEmployee && !queryRedirect.startsWith('/employee-assessment')
-          ? defaultRedirect
-          : queryRedirect || defaultRedirect
+      const redirect = queryRedirect || defaultRedirect
       await router.push(redirect)
     } finally {
       loading.value = false

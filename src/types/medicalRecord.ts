@@ -38,6 +38,17 @@ export interface MedicalRecordCase {
   updatedAt: string
 }
 
+export interface MedicalRecordReviewTodoItem {
+  id: number
+  caseNo: string
+  title: string
+  status: 'submitted'
+  assignedDoctorUserId: number
+  assignedDoctorName: string
+  updatedByName: string
+  updatedAt: string
+}
+
 export interface MedicalRecordSavePayload {
   title: string
   status?: MedicalRecordStatus

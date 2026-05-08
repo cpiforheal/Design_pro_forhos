@@ -290,6 +290,7 @@ async function handleDynamicRoutes(
     // 5. 保存菜单数据到 store
     const menuStore = useMenuStore()
     menuStore.setMenuList(menuList)
+    applyRoleLandingPath(menuStore, useUserStore())
     menuStore.addRemoveRouteFns(routeRegistry?.getRemoveRouteFns() || [])
 
     // 6. 保存 iframe 路由
@@ -415,6 +416,26 @@ function handleRootPathRedirect(to: RouteLocationNormalized, next: NavigationGua
   }
 
   return false
+}
+
+function applyRoleLandingPath(
+  menuStore: ReturnType<typeof useMenuStore>,
+  userStore: ReturnType<typeof useUserStore>
+): void {
+  const roles = userStore.currentRoles
+  if (roles.includes('R_EMPLOYEE')) {
+    menuStore.setHomePath('/employee-assessment/my')
+    return
+  }
+  if (roles.includes('R_LEADER')) {
+    menuStore.setHomePath('/assessment-review/leader-view')
+    return
+  }
+  if (roles.includes('R_MANAGER')) {
+    menuStore.setHomePath('/assessment-review/manager-view')
+    return
+  }
+  menuStore.setHomePath('/assessment/workbench')
 }
 
 /**

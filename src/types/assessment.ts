@@ -1,4 +1,6 @@
-﻿export type AssessmentStatus = 'completed' | 'pending' | 'na'
+﻿import type { MedicalRecordReviewTodoItem } from './medicalRecord'
+
+export type AssessmentStatus = 'completed' | 'pending' | 'na'
 export type WorkflowStatus =
   | 'notStarted'
   | 'draft'
@@ -521,6 +523,7 @@ export interface AssessmentBootstrapPayload {
   taskRecords: Record<string, TaskRecordDraft>
   rectifications: Array<RectificationItem & { updatedAt?: string; closedAt?: string }>
   reviewTodoItems: AssessmentReviewTodoItem[]
+  medicalRecordReviewTodoItems: MedicalRecordReviewTodoItem[]
   reviewLogs: AssessmentReviewLog[]
   performanceResults: PerformanceResult[]
   performanceSummary: PerformanceSummary
